@@ -7,7 +7,7 @@
 <meta name="claude:viewport-fit-sides" content="cover">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Great+Vibes&family=IM+Fell+English:ital@0;1&family=Instrument+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Caveat:wght@500&family=Dancing+Script:wght@500&family=Great+Vibes&family=Sacramento&family=IM+Fell+English:ital@0;1&family=Instrument+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap">
 <style>
 /* Layout: an instrument bench. A narrow control rail on the left, the orrery stage fills the rest.
    On phones the stage stacks above the rail. Dark-first: epicycles are planets on a night sky. */
@@ -133,6 +133,34 @@ button, input, select { font: inherit; color: inherit; }
 
 .chips { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
 .chips-label { color: var(--muted); font-size: 12.5px; margin-right: 2px; }
+.writer { display: grid; gap: 6px; margin: 0; }
+.writer-label { font-size: 12.5px; color: var(--muted); }
+#textIn {
+  width: 100%;
+  resize: vertical;
+  min-height: 3.2em;
+  background: var(--raise);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 7px 10px;
+  font: 400 22px/1.25 "Great Vibes", "Snell Roundhand", cursive;
+}
+#textIn:focus { border-color: var(--accent); outline: none; }
+.writer-row { display: flex; gap: 8px; }
+.writer-row select { flex: 1 1 auto; min-width: 0; }
+.btn {
+  flex: none;
+  border: 0;
+  border-radius: 8px;
+  padding: 6px 14px;
+  background: var(--accent);
+  color: var(--accent-ink);
+  font-weight: 600;
+  font-size: 13px;
+  cursor: pointer;
+}
+.btn:hover { filter: brightness(1.08); }
+.writer-hint { margin: 0; font-size: 12px; color: var(--muted); }
 .chip {
   border: 1px solid var(--line);
   background: transparent;
@@ -380,6 +408,20 @@ kbd {
         <button class="chip" type="button" data-demo="cat" aria-pressed="false">Cat sketch</button>
         <button class="chip" type="button" data-demo="script" aria-pressed="false">Handwriting</button>
       </div>
+      <form class="writer" id="writer" autocomplete="off">
+        <label class="writer-label" for="textIn">Or write something</label>
+        <textarea id="textIn" rows="2" maxlength="80" placeholder="Type a name or a short message" spellcheck="false">Hello there</textarea>
+        <div class="writer-row">
+          <select id="fontSel" aria-label="Handwriting style">
+            <option value="Great Vibes">Flowing script</option>
+            <option value="Sacramento">Monoline script</option>
+            <option value="Dancing Script">Casual script</option>
+            <option value="Caveat">Handwriting</option>
+          </select>
+          <button class="btn" id="writeBtn" type="submit">Write it</button>
+        </div>
+        <p class="writer-hint">Press Enter to draw. Shift + Enter starts a new line.</p>
+      </form>
       <div class="thumbs">
         <figure>
           <div class="frame"><canvas id="thumbSrc" width="2" height="2"></canvas></div>
@@ -1025,6 +1067,7 @@ function cleanMask(mask, w, h) {
 
 async function computeSubject(style) {
   const mode = S.subject;
+  if (S.text) return { mask: null, label: `Your text in ${$('fontSel').selectedOptions[0].textContent.toLowerCase()}` };
   if (mode === 'whole') return { mask: null, label: 'Whole image' };
   if (mode === 'auto' && style === 'center') return { mask: null, label: 'Whole image (line art)' };
   if (mode === 'auto' && R.hasAlpha) return { mask: cleanMask(alphaMask(), R.w, R.h), label: 'Transparency of the PNG' };
@@ -1966,13 +2009,15 @@ async function rebuild(from) {
   try {
     setBusy('Reading the picture…');
     await nextFrame();
-    if (lv <= 0 || !R0) { R0 = rasterize(S.source, S.res); R = R0; SUB = null; }
+    // typed text is traced finer: letters are small next to the whole line
+    const res = S.text ? Math.max(S.res, 1600) : S.res;
+    if (lv <= 0 || !R0) { R0 = rasterize(S.source, res); R = R0; SUB = null; }
     if (stale()) return;
 
     const keepR = R;
     R = R0;
     // 'photo' = decide between sketch and edges once we know whether this is a person
-    const base = S.style === 'auto' ? (detectLineArt() ? 'center' : 'photo') : S.style;
+    const base = S.text ? 'center' : S.style === 'auto' ? (detectLineArt() ? 'center' : 'photo') : S.style;
     R = keepR;
 
     if (lv <= 1 || !SUB || SUB.base !== base) {
@@ -1984,7 +2029,7 @@ async function rebuild(from) {
       if (crop) {
         setBusy('Zooming in on the subject…');
         await nextFrame();
-        R = rasterize(S.source, S.res, crop);
+        R = rasterize(S.source, res, crop);
         R.lineArt = R0.lineArt;
         const sub2 = await computeSubject(base);
         if (stale()) return;
@@ -2064,7 +2109,8 @@ function extractLines(style) {
   const { w, h, n } = R;
   const region = SUB.mask;
   const scale = Math.max(w, h) / 512;
-  const minLen = Math.max(2, S.minLen * scale);
+  // typed text keeps every i-dot and accent; elsewhere short strokes are noise
+  const minLen = S.text ? 3 : Math.max(2, S.minLen * scale);
   const layers = [];   // [binary skeleton, minimum stroke length]
   const vectors = [];  // strokes that are already clean curves (face features)
   if (style === 'center') {
@@ -2075,7 +2121,7 @@ function extractLines(style) {
     for (let i = 0; i < n; i++) if (v[i] > thr && (!region || region[i])) E[i] = 1;
     thin(E, w, h);
     removeStairs(E, w, h);
-    pruneSpurs(E, w, h, Math.round(6 * scale));
+    pruneSpurs(E, w, h, S.text ? Math.round(3 * Math.sqrt(scale)) : Math.round(6 * scale));
     layers.push([E, minLen]);
   } else if (style === 'artist') {
     const E = artistLines(region);
@@ -2161,7 +2207,7 @@ function extractLines(style) {
     }
   }
   strokes = strokes.concat(vectors);
-  const seq = orderStrokes(strokes);
+  const seq = S.text ? orderReading(strokes) : orderStrokes(strokes);
   return { strokes, seq, dropped, faces: vectors.length ? (SUB.faces || []).length : 0 };
 }
 
@@ -2572,7 +2618,7 @@ async function loadFile(file) {
   img.src = url;
   try { await img.decode(); }
   catch { setStatus(`This browser can’t read <b>${escapeHtml(file.name || 'that file')}</b>. HEIC photos often fail; export as JPG or PNG and try again.`, true); return; }
-  S.source = img; S.sourceName = file.name || 'pasted image'; S.userN = false;
+  S.source = img; S.sourceName = file.name || 'pasted image'; S.userN = false; S.text = null;
   document.querySelectorAll('[data-demo]').forEach((b) => b.setAttribute('aria-pressed', 'false'));
   rebuild('raster');
 }
@@ -2596,17 +2642,116 @@ async function loadDemo(kind) {
     ctx.strokeStyle = '#151515'; ctx.lineWidth = 7; ctx.lineCap = 'round'; ctx.lineJoin = 'round';
     for (const d of CAT_PATHS) ctx.stroke(new Path2D(d));
   } else {
-    c.width = 900; c.height = 330;
-    try { await Promise.race([document.fonts.load('150px "Great Vibes"'), new Promise((r) => setTimeout(r, 2500))]); } catch {}
-    ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, c.width, c.height);
-    ctx.fillStyle = '#151515';
-    ctx.font = '160px "Great Vibes", "Snell Roundhand", "Brush Script MT", cursive';
-    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-    ctx.fillText('Fourier', c.width / 2, c.height / 2 + 8);
+    $('textIn').value = 'Fourier';
+    $('fontSel').value = 'Great Vibes';
+    await writeText(true);
+    document.querySelectorAll('[data-demo]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.demo === kind)));
+    return;
   }
-  S.source = c; S.sourceName = kind; S.userN = false; S.demo = kind;
+  S.source = c; S.sourceName = kind; S.userN = false; S.demo = kind; S.text = null;
   document.querySelectorAll('[data-demo]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.demo === kind)));
   await rebuild('raster');
+}
+
+// ----- typed text, rendered in a script font and traced along the middle of each pen stroke -----
+function wrapText(text, maxChars = 18) {
+  const out = [];
+  for (const para of text.split('\n')) {
+    const words = para.trim().split(/\s+/).filter(Boolean);
+    let line = '';
+    for (const wd of words) {
+      if (line && (line + ' ' + wd).length > maxChars) { out.push(line); line = wd; }
+      else line = line ? line + ' ' + wd : wd;
+    }
+    if (line) out.push(line);
+  }
+  return out.slice(0, 4);
+}
+
+async function writeText(fromDemo = false) {
+  const text = $('textIn').value;
+  const lines = wrapText(text);
+  if (!lines.length) { setStatus('Type a word or a short message first.', true); $('textIn').focus(); return; }
+  const font = $('fontSel').value;
+  const size = 200;
+  setBusy('Loading the handwriting font…');
+  try {
+    await Promise.race([document.fonts.load(`${size}px "${font}"`, lines.join(' ')), new Promise((r) => setTimeout(r, 3000))]);
+  } catch {}
+  const fontCss = `${size}px "${font}", "Snell Roundhand", "Brush Script MT", cursive`;
+  const meas = document.createElement('canvas').getContext('2d');
+  meas.font = fontCss;
+  const widths = lines.map((l) => meas.measureText(l).width);
+  const lineH = size * 1.3, pad = size * 0.55;
+  const c = document.createElement('canvas');
+  c.width = Math.ceil(Math.max(...widths) + 2 * pad);
+  c.height = Math.ceil(lineH * lines.length + 2 * pad);
+  const ctx = c.getContext('2d');
+  ctx.fillStyle = '#fff';
+  ctx.fillRect(0, 0, c.width, c.height);
+  ctx.fillStyle = '#151515';
+  ctx.font = fontCss;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'alphabetic';
+  const thicken = font === 'Sacramento' ? 0.02 * size : 0;
+  if (thicken) { ctx.strokeStyle = '#151515'; ctx.lineWidth = thicken; ctx.lineJoin = 'round'; }
+  lines.forEach((l, i) => {
+    const y = pad + lineH * i + size * 0.95;
+    ctx.fillText(l, c.width / 2, y);
+    if (thicken) ctx.strokeText(l, c.width / 2, y);
+  });
+  S.source = c;
+  S.sourceName = 'text';
+  S.userN = false;
+  S.demo = fromDemo ? 'script' : null;
+  // where each line sits, so the circles can write in reading order
+  S.text = { tops: lines.map((_, i) => pad + lineH * i - size * 0.15), lineH };
+  if (!fromDemo) document.querySelectorAll('[data-demo]').forEach((b) => b.setAttribute('aria-pressed', 'false'));
+  await rebuild('raster');
+}
+
+// Writes like a person: line by line, left to right, nearest stroke next, so a word's
+// i-dots and t-crosses come right after the word instead of in some random order.
+function orderReading(strokes) {
+  const k = R.rect.w / R.w; // source pixels per raster pixel
+  const { tops, lineH } = S.text;
+  const lineHr = lineH / k;
+  const info = strokes.map((s, i) => {
+    let minX = Infinity, sy = 0;
+    for (let j = 0; j < s.xs.length; j++) { if (s.xs[j] < minX) minX = s.xs[j]; sy += s.ys[j]; }
+    const srcY = R.rect.y + (sy / s.xs.length) * k;
+    return { i, minX, line: clamp(Math.floor((srcY - tops[0]) / lineH), 0, tops.length - 1) };
+  });
+  const seq = [];
+  for (let L = 0; L < tops.length; L++) {
+    let rem = info.filter((o) => o.line === L);
+    let pen = null;
+    while (rem.length) {
+      const frontier = Math.min(...rem.map((o) => o.minX));
+      const cands = rem.filter((o) => o.minX <= frontier + 0.35 * lineHr);
+      let best = null, bd = Infinity, bo = null;
+      for (const o of cands) {
+        const s = strokes[o.i], m = s.xs.length;
+        // first stroke of a line starts at its left end; after that, at the end nearest the pen
+        const cost = (x, y) => (pen ? Math.hypot(x - pen[0], y - pen[1]) : x);
+        if (s.closed) {
+          for (let j = 0; j < m; j += Math.max(1, (m / 48) | 0)) {
+            const d = cost(s.xs[j], s.ys[j]);
+            if (d < bd) { bd = d; best = o; bo = { i: o.i, rev: false, rot: j }; }
+          }
+        } else {
+          let d = cost(s.xs[0], s.ys[0]);
+          if (d < bd) { bd = d; best = o; bo = { i: o.i, rev: false, rot: 0 }; }
+          d = cost(s.xs[m - 1], s.ys[m - 1]);
+          if (d < bd) { bd = d; best = o; bo = { i: o.i, rev: true, rot: 0 }; }
+        }
+      }
+      seq.push(bo);
+      pen = exitPt(strokes[bo.i], bo);
+      rem = rem.filter((o) => o !== best);
+    }
+  }
+  return seq;
 }
 
 // ----- wiring -----
@@ -2621,6 +2766,13 @@ function bindRange(id, outId, fmtFn, apply, from) {
 function wire() {
   $('file').addEventListener('change', (e) => { loadFile(e.target.files[0]); e.target.value = ''; });
   document.querySelectorAll('[data-demo]').forEach((b) => b.addEventListener('click', () => loadDemo(b.dataset.demo)));
+  $('writer').addEventListener('submit', (e) => { e.preventDefault(); writeText(); });
+  $('textIn').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); writeText(); }
+  });
+  const previewFont = () => { $('textIn').style.fontFamily = `"${$('fontSel').value}", "Snell Roundhand", cursive`; };
+  $('fontSel').addEventListener('change', () => { previewFont(); if (S.text) writeText(); });
+  previewFont();
 
   document.querySelectorAll('input[name="subject"]').forEach((r) => r.addEventListener('change', () => {
     S.subject = r.value; $('subjectHint').textContent = SUBJECT_HINTS[S.subject]; rebuild('mask');

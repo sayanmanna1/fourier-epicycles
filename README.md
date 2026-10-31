@@ -1,6 +1,10 @@
 # Epicycle Sketchbook
 
-Draw any picture with Fourier epicycles. Load a photo or drawing, and the app:
+Draw any picture, or any text you type, with Fourier epicycles.
+
+**Write text:** type a name or a short message, pick a handwriting style (flowing script, monoline script, casual script or handwriting), and press Enter. The text is rendered in that font, traced along the middle of each pen stroke, and written by the circles the way a person writes: line by line, left to right, with each word's i-dots and t-crosses right after the word. Long text wraps onto up to four lines.
+
+**Load a photo or drawing**, and the app:
 
 1. **Isolates the subject (optional).** To ignore a busy background, it can cut out the person or object with on-device AI (MediaPipe body-part segmentation, or DeepLab-v3 for 20 everyday object classes). It can also remove a plain background with classical colour keying, use PNG transparency, or keep the whole image (no AI at all). This step only decides *what* to draw. It never draws lines.
 2. **Draws the lines with computer vision.**
@@ -52,6 +56,7 @@ If `vendor/` is missing, run `./fetch-vendor.sh` (needs `npm` and `curl`). Witho
 
 | Control | What it does |
 |---|---|
+| Write text | text box (Enter draws, Shift+Enter adds a line) and handwriting style |
 | Subject | Auto, Person (AI), Object (AI), Plain bg, Whole image |
 | Line style | Auto, Artist lines (computer vision), AI sketch, Centerline (ink drawings) |
 | Outlines / Inner details / AI face features | switch each layer on or off |
