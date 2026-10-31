@@ -192,6 +192,7 @@ input[type="range"] { width: 100%; accent-color: var(--accent); margin: 2px 0; }
 .checks { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 12px; }
 .check { display: flex; gap: 8px; align-items: center; font-size: 13px; cursor: pointer; }
 .check input { accent-color: var(--accent); margin: 0; }
+.check-wide { grid-column: 1 / -1; }
 select {
   background: var(--raise);
   border: 1px solid var(--line);
@@ -320,7 +321,7 @@ kbd {
 .tbtn.primary { background: var(--accent); color: var(--accent-ink); }
 .tbtn[aria-pressed="true"] { border-color: var(--accent); color: var(--accent); }
 .tbtn svg { width: 16px; height: 16px; display: block; }
-#scrub { flex: 1 1 auto; min-width: 60px; }
+#scrub { flex: 1 1 auto; min-width: 40px; }
 #tOut { flex: none; font: 12px var(--mono); color: var(--muted); width: 6.5ch; text-align: right; font-variant-numeric: tabular-nums; }
 .dropveil {
   position: fixed;
@@ -350,6 +351,8 @@ kbd {
   .transport { left: max(16px, env(safe-area-inset-left, 0px)); }
   .tip-hint { display: none; }
   #fit { display: none; }
+  .transport { gap: 4px; padding: 6px; }
+  .tbtn { padding: 0 8px; }
 }
 @media (prefers-reduced-motion: reduce) {
   .busy::before { animation: none; }
@@ -414,7 +417,7 @@ kbd {
       <div class="checks">
         <label class="check"><input type="checkbox" id="optOutline" checked> Outlines</label>
         <label class="check"><input type="checkbox" id="optDetails" checked> Inner details</label>
-        <label class="check"><input type="checkbox" id="optFace" checked> AI face features (AI sketch)</label>
+        <label class="check check-wide"><input type="checkbox" id="optFace" checked> AI face features (AI sketch style only)</label>
       </div>
       <div class="row">
         <div class="row-head"><label for="detail">Detail</label><output id="detailOut" for="detail"></output></div>
@@ -485,9 +488,9 @@ kbd {
         <input type="range" id="speed" min="3" max="120" value="24">
       </div>
       <div class="checks">
+        <label class="check check-wide"><input type="checkbox" id="optGhost"> Show the figure before it’s drawn (faint preview)</label>
         <label class="check"><input type="checkbox" id="optCircles" checked> Circles</label>
         <label class="check"><input type="checkbox" id="optArms" checked> Radius arms</label>
-        <label class="check"><input type="checkbox" id="optGhost" checked> Preview of result</label>
         <label class="check"><input type="checkbox" id="optJumps"> Pen-lift lines</label>
         <label class="check"><input type="checkbox" id="optLoop" checked> Loop</label>
         <label class="check"><input type="checkbox" id="optFollow"> Follow the pen</label>
@@ -502,7 +505,7 @@ kbd {
       </div>
     </fieldset>
 
-    <p class="keys"><kbd>Space</kbd> play or pause · <kbd>↑</kbd><kbd>↓</kbd> more or fewer circles · <kbd>R</kbd> restart · <kbd>F</kbd> follow pen · scroll to zoom, drag to pan, double-click to fit.</p>
+    <p class="keys"><kbd>Space</kbd> play or pause · <kbd>↑</kbd><kbd>↓</kbd> more or fewer circles · <kbd>R</kbd> restart · <kbd>F</kbd> follow pen · <kbd>P</kbd> preview on or off · scroll to zoom, drag to pan, double-click to fit.</p>
   </aside>
 
   <main class="stage" id="stage">
@@ -524,6 +527,7 @@ kbd {
       </button>
       <input type="range" id="scrub" min="0" max="1000" value="0" aria-label="Position in the drawing">
       <output id="tOut">0%</output>
+      <button class="tbtn" id="ghostBtn" type="button" aria-pressed="false" title="Show the figure faintly before the circles draw it (P)">Preview</button>
       <button class="tbtn" id="followBtn" type="button" aria-pressed="false">Follow</button>
       <button class="tbtn" id="fit" type="button">Fit</button>
     </div>
@@ -553,7 +557,7 @@ const S = {
   detail: 0.6, smooth: 1.4, minLen: 12, res: 1024,
   mSel: 'auto', N: 250, userN: false,
   playing: !reduceMotion, cycleSec: 24, t: 0, loop: true,
-  showCircles: true, showArms: true, showGhost: true, showJumps: false,
+  showCircles: true, showArms: true, showGhost: false, showJumps: false,
   follow: false, followZoom: 6, lineW: 1.6,
 };
 
@@ -2451,6 +2455,15 @@ function setPlaying(p) {
   dirty = true;
 }
 
+// faint preview of the whole figure before the circles reach it; remembered per browser
+function setGhost(on, remember = true) {
+  S.showGhost = on;
+  $('optGhost').checked = on;
+  $('ghostBtn').setAttribute('aria-pressed', String(on));
+  if (remember) { try { localStorage.setItem('epicycles.preview', on ? '1' : '0'); } catch {} }
+  dirty = true;
+}
+
 function setFollow(on) {
   S.follow = on;
   $('optFollow').checked = on;
@@ -2632,7 +2645,9 @@ function wire() {
   bindRange('speed', 'speedOut', (v) => `${v} s`, (v) => (S.cycleSec = v));
   bindRange('zoom', 'zoomOut', (v) => `${v}×`, (v) => { S.followZoom = v; dirty = true; });
   bindRange('lineW', 'lineWOut', (v) => `${(v / 10).toFixed(1)} px`, (v) => { S.lineW = v / 10; dirty = true; });
-  const toggles = { optCircles: 'showCircles', optArms: 'showArms', optGhost: 'showGhost', optJumps: 'showJumps', optLoop: 'loop' };
+  const toggles = { optCircles: 'showCircles', optArms: 'showArms', optJumps: 'showJumps', optLoop: 'loop' };
+  $('optGhost').addEventListener('change', (e) => setGhost(e.target.checked));
+  $('ghostBtn').addEventListener('click', () => setGhost(!S.showGhost));
   for (const [id, key] of Object.entries(toggles)) $(id).addEventListener('change', (e) => { S[key] = e.target.checked; dirty = true; });
   $('optFollow').addEventListener('change', (e) => setFollow(e.target.checked));
 
@@ -2704,6 +2719,7 @@ function wire() {
     else if (e.key === 'ArrowDown' && !e.target.closest('input')) { e.preventDefault(); setN(Math.min(S.N - 1, S.N / 1.25)); }
     else if (e.key === 'r' || e.key === 'R') { holdUntil = 0; setT(0); setPlaying(true); }
     else if (e.key === 'f' || e.key === 'F') setFollow(!S.follow);
+    else if (e.key === 'p' || e.key === 'P') setGhost(!S.showGhost);
   });
 
   new ResizeObserver(resize).observe($('stage'));
@@ -2719,6 +2735,7 @@ readColors();
 wire();
 resize();
 setPlaying(S.playing);
+try { setGhost(localStorage.getItem('epicycles.preview') === '1', false); } catch { setGhost(false, false); }
 requestAnimationFrame(tick);
 loadDemo('cat');
 window.__epicycles = { S, get F() { return F; }, get LN() { return LN; }, get SUB() { return SUB; }, get R() { return R; }, setN, loadFile, rebuild };
