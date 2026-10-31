@@ -1,0 +1,2094 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Epicycle Sketchbook</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Great+Vibes&family=IM+Fell+English:ital@0;1&family=Instrument+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: an instrument bench. A narrow control rail on the left, the orrery stage fills the rest.
+   On phones the stage stacks above the rail. Dark-first: epicycles are planets on a night sky. */
+:root {
+  --bg: #0d1222;
+  --panel: #11182b;
+  --raise: #182038;
+  --line: #263052;
+  --fg: #ebe5d5;
+  --muted: #8e96b0;
+  --accent: #d9aa55;
+  --accent-ink: #1a1408;
+  --c-stage: #0a0f1d;
+  --c-ink: #f5efdf;
+  --c-orbit: rgba(217, 170, 85, 0.30);
+  --c-arm: rgba(170, 188, 228, 0.55);
+  --c-ghost: rgba(235, 229, 213, 0.10);
+  --c-jump: rgba(142, 150, 176, 0.55);
+  --c-tip: #f0c46e;
+  --c-bar: #d9aa55;
+  --c-bar-off: rgba(142, 150, 176, 0.38);
+  --danger: #ef9a86;
+  --display: "IM Fell English", "Iowan Old Style", Georgia, serif;
+  --body: "Instrument Sans", "Segoe UI", system-ui, sans-serif;
+  --mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  color-scheme: dark;
+  padding-top: env(safe-area-inset-top, 0px);
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme="dark"]) {
+    --bg: #e8ebf1; --panel: #f4f6fa; --raise: #ffffff; --line: #cfd5e2;
+    --fg: #171e36; --muted: #58617c; --accent: #94650f; --accent-ink: #fffaf0;
+    --c-stage: #f7f8fb; --c-ink: #131a33; --c-orbit: rgba(148, 101, 15, 0.34);
+    --c-arm: rgba(36, 58, 112, 0.5); --c-ghost: rgba(19, 26, 51, 0.09);
+    --c-jump: rgba(88, 97, 124, 0.6); --c-tip: #b77b12; --c-bar: #94650f;
+    --c-bar-off: rgba(88, 97, 124, 0.32); --danger: #b03a26;
+    color-scheme: light;
+  }
+}
+:root[data-theme="light"] {
+  --bg: #e8ebf1; --panel: #f4f6fa; --raise: #ffffff; --line: #cfd5e2;
+  --fg: #171e36; --muted: #58617c; --accent: #94650f; --accent-ink: #fffaf0;
+  --c-stage: #f7f8fb; --c-ink: #131a33; --c-orbit: rgba(148, 101, 15, 0.34);
+  --c-arm: rgba(36, 58, 112, 0.5); --c-ghost: rgba(19, 26, 51, 0.09);
+  --c-jump: rgba(88, 97, 124, 0.6); --c-tip: #b77b12; --c-bar: #94650f;
+  --c-bar-off: rgba(88, 97, 124, 0.32); --danger: #b03a26;
+  color-scheme: light;
+}
+
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+html, body { height: 100%; }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--fg);
+  font: 14px/1.5 var(--body);
+  -webkit-font-smoothing: antialiased;
+}
+button, input, select { font: inherit; color: inherit; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+.app {
+  height: 100%;
+  display: grid;
+  grid-template-columns: minmax(300px, 356px) minmax(0, 1fr);
+}
+
+/* ---------- control rail ---------- */
+.rail {
+  min-width: 0;
+  overflow-y: auto;
+  background: var(--panel);
+  border-right: 1px solid var(--line);
+  padding-block: 22px 28px;
+  padding-left: max(18px, env(safe-area-inset-left, 0px));
+  padding-right: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+.brand { display: grid; gap: 6px; }
+.brand h1 {
+  margin: 0;
+  font-family: var(--display);
+  font-weight: 400;
+  font-size: 30px;
+  line-height: 1.05;
+  letter-spacing: 0.005em;
+  text-wrap: balance;
+}
+.brand h1 i { color: var(--accent); }
+.brand p { margin: 0; color: var(--muted); font-size: 13px; max-width: 42ch; }
+
+.group { display: grid; gap: 12px; border: 0; margin: 0; padding: 0; min-width: 0; }
+.group + .group { border-top: 1px solid var(--line); padding-top: 20px; }
+.label, .group > legend {
+  font: 500 11px/1 var(--mono);
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: var(--muted);
+  padding: 0;
+  margin: 0;
+}
+.group > legend { float: left; width: 100%; }
+
+.drop {
+  position: relative;
+  display: grid;
+  gap: 2px;
+  padding: 14px 14px;
+  border: 1px dashed var(--line);
+  border-radius: 10px;
+  background: var(--raise);
+  cursor: pointer;
+  transition: border-color .15s;
+}
+.drop:hover, .drop:focus-within { border-color: var(--accent); }
+.drop input { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
+.drop-title { font-weight: 600; }
+.drop-sub { color: var(--muted); font-size: 12.5px; }
+
+.chips { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.chips-label { color: var(--muted); font-size: 12.5px; margin-right: 2px; }
+.chip {
+  border: 1px solid var(--line);
+  background: transparent;
+  border-radius: 999px;
+  padding: 3px 11px;
+  font-size: 12.5px;
+  cursor: pointer;
+}
+.chip:hover { border-color: var(--accent); }
+.chip[aria-pressed="true"] { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+
+.thumbs { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.thumbs figure { margin: 0; display: grid; gap: 5px; min-width: 0; }
+.thumbs .frame {
+  height: 132px;
+  border-radius: 8px;
+  background: var(--c-stage);
+  border: 1px solid var(--line);
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+}
+.thumbs canvas { max-width: 100%; max-height: 100%; display: block; }
+.thumbs figcaption { font-size: 12px; color: var(--muted); }
+
+.status {
+  margin: 0;
+  font-size: 12.5px;
+  color: var(--muted);
+  min-height: 2.9em;
+}
+.status b { color: var(--fg); font-weight: 600; }
+.status.err { color: var(--danger); }
+
+.seg { display: flex; flex-wrap: wrap; gap: 4px; padding: 3px; border: 1px solid var(--line); border-radius: 10px; background: var(--raise); }
+.seg label { flex: 1 1 auto; position: relative; }
+.seg input { position: absolute; opacity: 0; inset: 0; margin: 0; cursor: pointer; }
+.seg span {
+  display: block;
+  text-align: center;
+  padding: 5px 9px;
+  border-radius: 7px;
+  font-size: 12.5px;
+  white-space: nowrap;
+  color: var(--muted);
+}
+.seg input:checked + span { background: var(--accent); color: var(--accent-ink); font-weight: 600; }
+.seg input:focus-visible + span { outline: 2px solid var(--accent); outline-offset: 1px; }
+.seg label:hover span { color: var(--fg); }
+.seg input:checked:hover + span { color: var(--accent-ink); }
+.hint { margin: 0; font-size: 12.5px; color: var(--muted); }
+
+.row { display: grid; gap: 4px; }
+.row-head { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; font-size: 13px; }
+.row-head output, .num { font: 12px var(--mono); color: var(--muted); font-variant-numeric: tabular-nums; }
+input[type="range"] { width: 100%; accent-color: var(--accent); margin: 2px 0; }
+.checks { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 12px; }
+.check { display: flex; gap: 8px; align-items: center; font-size: 13px; cursor: pointer; }
+.check input { accent-color: var(--accent); margin: 0; }
+select {
+  background: var(--raise);
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  padding: 4px 8px;
+  font-size: 13px;
+}
+.inline { display: flex; align-items: center; justify-content: space-between; gap: 10px; font-size: 13px; }
+
+/* N control */
+.ncard { display: grid; gap: 10px; }
+.nline { display: flex; align-items: baseline; gap: 10px; }
+.nbig { font: 400 40px/1 var(--display); color: var(--fg); font-variant-numeric: tabular-nums; }
+.nbig-sub { color: var(--muted); font-size: 12.5px; }
+#nInput {
+  width: 84px;
+  margin-left: auto;
+  background: var(--raise);
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  padding: 4px 8px;
+  font: 13px var(--mono);
+  font-variant-numeric: tabular-nums;
+}
+.presets { display: flex; gap: 6px; flex-wrap: wrap; }
+.presets .chip { font-family: var(--mono); font-size: 12px; }
+.meter { height: 6px; border-radius: 3px; background: var(--line); overflow: hidden; }
+.meter > i { display: block; height: 100%; width: 0; background: var(--accent); border-radius: 3px; transition: width .2s; }
+.meter-text { font-size: 12.5px; color: var(--muted); margin: 0; }
+.meter-text b { color: var(--fg); font-weight: 600; font-variant-numeric: tabular-nums; }
+.spec-wrap { display: grid; gap: 4px; }
+.spec-title { font-size: 12.5px; color: var(--fg); display: flex; justify-content: space-between; gap: 8px; }
+.spec-title span { color: var(--muted); }
+#spec { width: 100%; height: 86px; display: block; border-radius: 6px; background: var(--c-stage); border: 1px solid var(--line); cursor: crosshair; }
+.spec-read { font: 11.5px var(--mono); color: var(--muted); min-height: 1.4em; font-variant-numeric: tabular-nums; }
+
+.keys { font-size: 12px; color: var(--muted); margin: 0; line-height: 1.8; }
+kbd {
+  font: 11px var(--mono);
+  border: 1px solid var(--line);
+  border-bottom-width: 2px;
+  border-radius: 4px;
+  padding: 0 5px;
+  background: var(--raise);
+  color: var(--fg);
+}
+
+/* ---------- stage ---------- */
+.stage { position: relative; min-width: 0; min-height: 0; background: var(--c-stage); overflow: hidden; }
+#view { position: absolute; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; cursor: grab; }
+#view.dragging { cursor: grabbing; }
+.hud {
+  position: absolute;
+  top: 14px;
+  left: 16px;
+  display: grid;
+  gap: 2px;
+  pointer-events: none;
+  font: 12px var(--mono);
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.hud .hud-n { font: 400 22px/1.1 var(--display); color: var(--fg); }
+.hud .hud-n small { font: 12px var(--mono); color: var(--muted); }
+.tip-hint {
+  position: absolute;
+  top: 14px;
+  right: max(16px, env(safe-area-inset-right, 0px));
+  font-size: 12px;
+  color: var(--muted);
+  pointer-events: none;
+  text-align: right;
+}
+.busy {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  translate: -50% -50%;
+  background: var(--raise);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 7px 16px;
+  font-size: 13px;
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  box-shadow: 0 8px 30px rgba(0,0,0,.25);
+}
+.busy::before {
+  content: "";
+  width: 12px; height: 12px;
+  border-radius: 50%;
+  border: 2px solid var(--accent);
+  border-right-color: transparent;
+  animation: spin .8s linear infinite;
+}
+@keyframes spin { to { rotate: 360deg; } }
+.transport {
+  position: absolute;
+  left: 16px;
+  right: max(16px, env(safe-area-inset-right, 0px));
+  bottom: 14px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  background: color-mix(in srgb, var(--raise) 88%, transparent);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  backdrop-filter: blur(6px);
+}
+.tbtn {
+  flex: none;
+  height: 32px;
+  min-width: 32px;
+  padding: 0 10px;
+  display: inline-grid;
+  place-items: center;
+  border-radius: 8px;
+  border: 1px solid transparent;
+  background: transparent;
+  cursor: pointer;
+  font-size: 12.5px;
+}
+.tbtn:hover { border-color: var(--line); }
+.tbtn.primary { background: var(--accent); color: var(--accent-ink); }
+.tbtn[aria-pressed="true"] { border-color: var(--accent); color: var(--accent); }
+.tbtn svg { width: 16px; height: 16px; display: block; }
+#scrub { flex: 1 1 auto; min-width: 60px; }
+#tOut { flex: none; font: 12px var(--mono); color: var(--muted); width: 6.5ch; text-align: right; font-variant-numeric: tabular-nums; }
+.dropveil {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  display: grid;
+  place-items: center;
+  background: color-mix(in srgb, var(--bg) 80%, transparent);
+  font: 400 28px var(--display);
+  color: var(--fg);
+  border: 2px dashed var(--accent);
+  pointer-events: none;
+}
+
+@media (max-width: 860px) {
+  html, body { height: auto; }
+  .app { height: auto; grid-template-columns: minmax(0, 1fr); }
+  .stage { order: -1; height: 64vh; min-height: 340px; }
+  .rail {
+    border-right: 0;
+    border-top: 1px solid var(--line);
+    overflow: visible;
+    padding-left: max(16px, env(safe-area-inset-left, 0px));
+    padding-right: max(16px, env(safe-area-inset-right, 0px));
+  }
+  .hud { left: max(16px, env(safe-area-inset-left, 0px)); }
+  .transport { left: max(16px, env(safe-area-inset-left, 0px)); }
+  .tip-hint { display: none; }
+  #fit { display: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .busy::before { animation: none; }
+  .meter > i { transition: none; }
+}
+</style>
+</head>
+<body>
+<div class="app">
+  <aside class="rail" aria-label="Controls">
+    <header class="brand">
+      <h1>Epicycle <i>Sketchbook</i></h1>
+      <p>Turns a picture into one continuous line, takes its discrete Fourier transform, and redraws it with N rotating circles.</p>
+    </header>
+
+    <section class="group" aria-labelledby="hPicture">
+      <h2 class="label" id="hPicture">Picture</h2>
+      <label class="drop" id="drop">
+        <input type="file" id="file" accept="image/*">
+        <span class="drop-title">Choose an image</span>
+        <span class="drop-sub">or drop or paste one anywhere. JPG, PNG, WebP.</span>
+      </label>
+      <div class="chips">
+        <span class="chips-label">Samples</span>
+        <button class="chip" type="button" data-demo="cat" aria-pressed="false">Cat sketch</button>
+        <button class="chip" type="button" data-demo="script" aria-pressed="false">Handwriting</button>
+      </div>
+      <div class="thumbs">
+        <figure>
+          <div class="frame"><canvas id="thumbSrc" width="2" height="2"></canvas></div>
+          <figcaption>Subject (background dimmed)</figcaption>
+        </figure>
+        <figure>
+          <div class="frame"><canvas id="thumbLines" width="2" height="2"></canvas></div>
+          <figcaption>Extracted lines</figcaption>
+        </figure>
+      </div>
+      <p class="status" id="status" role="status" aria-live="polite">Loading…</p>
+    </section>
+
+    <fieldset class="group">
+      <legend>Subject</legend>
+      <div class="seg" role="radiogroup" aria-label="Subject">
+        <label><input type="radio" name="subject" id="subAuto" value="auto" checked><span>Auto</span></label>
+        <label><input type="radio" name="subject" id="subPerson" value="person"><span>Person</span></label>
+        <label><input type="radio" name="subject" id="subObject" value="object"><span>Object</span></label>
+        <label><input type="radio" name="subject" id="subPlain" value="plain"><span>Plain bg</span></label>
+        <label><input type="radio" name="subject" id="subWhole" value="whole"><span>Whole</span></label>
+      </div>
+      <p class="hint" id="subjectHint"></p>
+    </fieldset>
+
+    <fieldset class="group">
+      <legend>Lines</legend>
+      <div class="seg" role="radiogroup" aria-label="Line style">
+        <label><input type="radio" name="style" id="styAuto" value="auto" checked><span>Auto</span></label>
+        <label><input type="radio" name="style" id="styEdges" value="edges"><span>Edges (photos)</span></label>
+        <label><input type="radio" name="style" id="styCenter" value="center"><span>Centerline (ink)</span></label>
+      </div>
+      <div class="checks">
+        <label class="check"><input type="checkbox" id="optOutline" checked> Subject outline</label>
+        <label class="check"><input type="checkbox" id="optDetails" checked> Inner details</label>
+      </div>
+      <div class="row">
+        <div class="row-head"><label for="detail">Detail</label><output id="detailOut" for="detail"></output></div>
+        <input type="range" id="detail" min="0" max="100" value="45">
+      </div>
+      <div class="row">
+        <div class="row-head"><label for="smooth">Smoothing (blur before edges)</label><output id="smoothOut" for="smooth"></output></div>
+        <input type="range" id="smooth" min="0" max="40" value="10">
+      </div>
+      <div class="row">
+        <div class="row-head"><label for="minLen">Drop strokes shorter than</label><output id="minLenOut" for="minLen"></output></div>
+        <input type="range" id="minLen" min="0" max="80" value="12">
+      </div>
+      <div class="inline">
+        <label for="res">Working resolution</label>
+        <select id="res">
+          <option value="256">256 px</option>
+          <option value="384">384 px</option>
+          <option value="512" selected>512 px</option>
+          <option value="768">768 px</option>
+          <option value="1024">1024 px</option>
+        </select>
+      </div>
+    </fieldset>
+
+    <fieldset class="group">
+      <legend>Epicycles</legend>
+      <div class="ncard">
+        <div class="nline">
+          <span class="nbig" id="nBig">250</span>
+          <span class="nbig-sub">circles<br>of <span id="nMax">–</span></span>
+          <input type="number" id="nInput" min="1" value="250" aria-label="Number of epicycles N">
+        </div>
+        <input type="range" id="nSlider" min="0" max="1000" value="600" aria-label="Number of epicycles (log scale)">
+        <div class="presets" id="presets">
+          <button class="chip" type="button" data-n="3">3</button>
+          <button class="chip" type="button" data-n="20">20</button>
+          <button class="chip" type="button" data-n="100">100</button>
+          <button class="chip" type="button" data-n="500">500</button>
+          <button class="chip" type="button" data-n="2000">2000</button>
+          <button class="chip" type="button" data-n="all">All</button>
+        </div>
+        <div class="meter" aria-hidden="true"><i id="meter"></i></div>
+        <p class="meter-text" id="meterText"></p>
+      </div>
+      <div class="spec-wrap">
+        <div class="spec-title">Amplitude spectrum <span>log |c<sub>k</sub>| by frequency k</span></div>
+        <canvas id="spec" aria-label="Amplitude spectrum of the Fourier coefficients"></canvas>
+        <div class="spec-read" id="specRead">Hover the spectrum to read a coefficient.</div>
+      </div>
+      <div class="inline">
+        <label for="mSel">Path samples (DFT size M)</label>
+        <select id="mSel">
+          <option value="auto" selected>Auto</option>
+          <option value="512">512</option>
+          <option value="1024">1024</option>
+          <option value="2048">2048</option>
+          <option value="4096">4096</option>
+          <option value="8192">8192</option>
+        </select>
+      </div>
+    </fieldset>
+
+    <fieldset class="group">
+      <legend>Playback</legend>
+      <div class="row">
+        <div class="row-head"><label for="speed">Time for one full drawing</label><output id="speedOut" for="speed"></output></div>
+        <input type="range" id="speed" min="3" max="120" value="24">
+      </div>
+      <div class="checks">
+        <label class="check"><input type="checkbox" id="optCircles" checked> Circles</label>
+        <label class="check"><input type="checkbox" id="optArms" checked> Radius arms</label>
+        <label class="check"><input type="checkbox" id="optGhost" checked> Preview of result</label>
+        <label class="check"><input type="checkbox" id="optJumps"> Pen-lift lines</label>
+        <label class="check"><input type="checkbox" id="optLoop" checked> Loop</label>
+        <label class="check"><input type="checkbox" id="optFollow"> Follow the pen</label>
+      </div>
+      <div class="row">
+        <div class="row-head"><label for="zoom">Follow zoom</label><output id="zoomOut" for="zoom"></output></div>
+        <input type="range" id="zoom" min="2" max="40" value="6">
+      </div>
+      <div class="row">
+        <div class="row-head"><label for="lineW">Line weight</label><output id="lineWOut" for="lineW"></output></div>
+        <input type="range" id="lineW" min="5" max="40" value="16">
+      </div>
+    </fieldset>
+
+    <p class="keys"><kbd>Space</kbd> play or pause · <kbd>↑</kbd><kbd>↓</kbd> more or fewer circles · <kbd>R</kbd> restart · <kbd>F</kbd> follow pen · scroll to zoom, drag to pan, double-click to fit.</p>
+  </aside>
+
+  <main class="stage" id="stage">
+    <canvas id="view" aria-label="Epicycle drawing animation"></canvas>
+    <div class="hud" aria-live="off">
+      <div class="hud-n"><span id="hudN">–</span> <small>circles</small></div>
+      <div id="hudLine1"></div>
+      <div id="hudLine2"></div>
+    </div>
+    <div class="tip-hint">Scroll to zoom · drag to pan · double-click to fit</div>
+    <div class="busy" id="busy" hidden><span id="busyText">Working…</span></div>
+    <div class="transport">
+      <button class="tbtn primary" id="play" type="button" aria-label="Pause">
+        <svg id="icoPause" viewBox="0 0 16 16" aria-hidden="true"><rect x="3.5" y="2.5" width="3" height="11" rx="1" fill="currentColor"/><rect x="9.5" y="2.5" width="3" height="11" rx="1" fill="currentColor"/></svg>
+        <svg id="icoPlay" viewBox="0 0 16 16" aria-hidden="true" hidden><path d="M4.5 2.6v10.8a.8.8 0 0 0 1.2.7l8.6-5.4a.8.8 0 0 0 0-1.4L5.7 1.9a.8.8 0 0 0-1.2.7z" fill="currentColor"/></svg>
+      </button>
+      <button class="tbtn" id="restart" type="button" aria-label="Restart drawing">
+        <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3 8a5 5 0 1 0 1.6-3.7" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><path d="M2.6 1.8v3.4H6" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </button>
+      <input type="range" id="scrub" min="0" max="1000" value="0" aria-label="Position in the drawing">
+      <output id="tOut">0%</output>
+      <button class="tbtn" id="followBtn" type="button" aria-pressed="false">Follow</button>
+      <button class="tbtn" id="fit" type="button">Fit</button>
+    </div>
+  </main>
+</div>
+<div class="dropveil" id="dropveil" hidden>Drop the image to trace it</div>
+
+<script type="module">
+// =====================================================================
+//  Epicycle Sketchbook
+//  image → subject mask → line extraction → stroke tracing → one closed
+//  path → arc-length resampling → FFT → N epicycles, animated.
+// =====================================================================
+
+const $ = (id) => document.getElementById(id);
+const nextFrame = () => new Promise((r) => requestAnimationFrame(() => r()));
+const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+const fmt = (n) => Number(n).toLocaleString('en-US');
+const nextPow2 = (n) => { let p = 1; while (p < n) p <<= 1; return p; };
+const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+// ------------------------------------------------------------ settings
+const S = {
+  source: null, sourceName: '', demo: null,
+  subject: 'auto', style: 'auto',
+  outline: true, details: true,
+  detail: 0.45, smooth: 1.4, minLen: 12, res: 512,
+  mSel: 'auto', N: 250, userN: false,
+  playing: !reduceMotion, cycleSec: 24, t: 0, loop: true,
+  showCircles: true, showArms: true, showGhost: true, showJumps: false,
+  follow: false, followZoom: 6, lineW: 1.6,
+};
+
+// pipeline results
+let R0 = null;    // full-frame raster
+let R = null;     // raster
+let SUB = null;   // subject mask
+let LN = null;    // extracted, ordered strokes
+let F = null;     // Fourier coefficients
+let C = null;     // reconstructed curve for current N
+
+// =====================================================================
+//  1. Raster
+// =====================================================================
+function rasterize(src, res, crop = null) {
+  const iw = src.naturalWidth || src.width, ih = src.naturalHeight || src.height;
+  const c = crop || { x: 0, y: 0, w: iw, h: ih };
+  const s = Math.min(4, res / Math.max(c.w, c.h));
+  const w = Math.max(24, Math.round(c.w * s)), h = Math.max(24, Math.round(c.h * s));
+  const raw = document.createElement('canvas');
+  raw.width = w; raw.height = h;
+  const rctx = raw.getContext('2d', { willReadFrequently: true });
+  rctx.imageSmoothingQuality = 'high';
+  rctx.drawImage(src, c.x, c.y, c.w, c.h, 0, 0, w, h);
+  const rgba = rctx.getImageData(0, 0, w, h).data;
+
+  const flat = document.createElement('canvas');
+  flat.width = w; flat.height = h;
+  const fctx = flat.getContext('2d', { willReadFrequently: true });
+  fctx.fillStyle = '#fff'; fctx.fillRect(0, 0, w, h);
+  fctx.drawImage(raw, 0, 0);
+  const frgb = fctx.getImageData(0, 0, w, h).data;
+
+  const n = w * h;
+  const gray = new Float32Array(n), alpha = new Float32Array(n);
+  let transparent = 0;
+  for (let i = 0; i < n; i++) {
+    const a = rgba[4 * i + 3] / 255;
+    alpha[i] = a;
+    if (a < 0.9) transparent++;
+    gray[i] = (0.299 * frgb[4 * i] + 0.587 * frgb[4 * i + 1] + 0.114 * frgb[4 * i + 2]) / 255;
+  }
+  const border = borderIndices(w, h, 3);
+  const bl = new Float32Array(border.length);
+  border.forEach((i, k) => (bl[k] = gray[i]));
+  bl.sort();
+  return { w, h, n, flat, frgb, gray, alpha, hasAlpha: transparent > n * 0.02, bgLum: bl[bl.length >> 1], border, seg: {}, lineArt: null, crop, srcW: iw, srcH: ih };
+}
+
+function borderIndices(w, h, band) {
+  const out = [];
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+    if (x < band || y < band || x >= w - band || y >= h - band) out.push(y * w + x);
+  }
+  return out;
+}
+
+// "ink" = how far a pixel is from the paper (or how opaque it is)
+function inkValues() {
+  const { n, gray, alpha, bgLum, hasAlpha } = R;
+  const v = new Float32Array(n);
+  if (hasAlpha) for (let i = 0; i < n; i++) v[i] = alpha[i];
+  else for (let i = 0; i < n; i++) v[i] = Math.min(1, Math.abs(gray[i] - bgLum));
+  return v;
+}
+
+function otsu(vals, bins = 64) {
+  const hist = new Float64Array(bins);
+  for (let i = 0; i < vals.length; i++) hist[Math.min(bins - 1, (vals[i] * bins) | 0)]++;
+  let sum = 0; for (let b = 0; b < bins; b++) sum += b * hist[b];
+  let sumB = 0, wB = 0, best = -1, thr = 0.5;
+  const total = vals.length;
+  for (let b = 0; b < bins; b++) {
+    wB += hist[b]; if (!wB) continue;
+    const wF = total - wB; if (!wF) break;
+    sumB += b * hist[b];
+    const mB = sumB / wB, mF = (sum - sumB) / wF;
+    const between = wB * wF * (mB - mF) * (mB - mF);
+    if (between > best) { best = between; thr = (b + 1) / bins; }
+  }
+  return thr;
+}
+
+// Line art = sparse ink whose strokes are thin (ink area / skeleton length is small)
+function detectLineArt() {
+  if (R.lineArt !== null) return R.lineArt;
+  const { w, h, n } = R;
+  const v = inkValues();
+  const thr = Math.max(0.12, otsu(v));
+  const bin = new Uint8Array(n);
+  let ink = 0;
+  for (let i = 0; i < n; i++) if (v[i] > thr) { bin[i] = 1; ink++; }
+  let result = false;
+  // line art sits on plain paper: the border must be one flat colour
+  const plain = R.hasAlpha || plainBackgroundMask().uniform;
+  if (plain && ink > n * 0.002 && ink < n * 0.3) {
+    thin(bin, w, h);
+    let sk = 0; for (let i = 0; i < n; i++) sk += bin[i];
+    const avgWidth = ink / Math.max(1, sk);
+    result = avgWidth < Math.max(5, 0.024 * Math.max(w, h));
+  }
+  R.lineArt = result;
+  return result;
+}
+
+// =====================================================================
+//  2. Subject mask (MediaPipe segmentation, transparency, or flat background)
+// =====================================================================
+const AI = { mod: null, segs: {}, error: null, labels: null };
+const SCENERY = new Set([9, 11, 16, 18, 20]); // chair, dining table, potted plant, sofa, tv
+
+async function importVision() {
+  if (AI.mod) return AI.mod;
+  const url = new URL('vendor/vision_bundle.js', document.baseURI).href;
+  try {
+    AI.mod = await import(url);
+  } catch (e) {
+    // Some sandboxes refuse module imports by URL; try a blob copy.
+    const txt = await (await fetch(url)).text();
+    AI.mod = await import(URL.createObjectURL(new Blob([txt], { type: 'text/javascript' })));
+  }
+  return AI.mod;
+}
+
+// A .tflite file carries "TFL3" at byte 4.
+const isTflite = (b) => b.length > 8 && b[4] === 0x54 && b[5] === 0x46 && b[6] === 0x4c && b[7] === 0x33;
+
+// Loads vendor/models/<name>.tflite, or a base64 copy (<name>.tflite.b64.txt) for hosts that
+// refuse to serve binary model files.
+async function loadModelBytes(name, base) {
+  try {
+    const r = await fetch(new URL(`models/${name}.tflite`, base));
+    if (r.ok) {
+      const b = new Uint8Array(await r.arrayBuffer());
+      if (isTflite(b)) return b;
+    }
+  } catch {}
+  const r = await fetch(new URL(`models/${name}.tflite.b64.txt`, base));
+  if (!r.ok) throw new Error(`Model file for ${name} is missing. Run fetch-vendor.sh.`);
+  const bin = atob((await r.text()).trim());
+  const b = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) b[i] = bin.charCodeAt(i);
+  if (!isTflite(b)) throw new Error(`Model file for ${name} is not a TFLite model.`);
+  return b;
+}
+
+async function getSegmenter(kind) {
+  if (AI.segs[kind]) return AI.segs[kind];
+  if (AI.error) throw AI.error;
+  try {
+    setBusy(kind === 'person' ? 'Loading person model (first use only)…' : 'Loading object model (first use only)…');
+    const vision = await importVision();
+    const base = new URL('vendor/', document.baseURI);
+    const fileset = {
+      wasmLoaderPath: new URL('wasm/vision_wasm_internal.js', base).href,
+      wasmBinaryPath: new URL('wasm/vision_wasm_internal.wasm', base).href,
+    };
+    const model = await loadModelBytes(kind === 'person' ? 'selfie_segmenter' : 'deeplab_v3', base);
+    const seg = await vision.ImageSegmenter.createFromOptions(fileset, {
+      baseOptions: { modelAssetBuffer: model, delegate: 'CPU' },
+      runningMode: 'IMAGE',
+      outputCategoryMask: kind === 'object',
+      outputConfidenceMasks: kind === 'person',
+    });
+    if (kind === 'object') AI.labels = seg.getLabels();
+    AI.segs[kind] = seg;
+    return seg;
+  } catch (e) {
+    AI.error = e;
+    console.warn('Segmentation unavailable:', e);
+    throw e;
+  }
+}
+
+async function segmentPerson() {
+  if (R.seg.person) return R.seg.person;
+  const seg = await getSegmenter('person');
+  setBusy('Finding the person…');
+  await nextFrame();
+  let mask = null;
+  seg.segment(R.flat, (res) => {
+    const m = res.confidenceMasks[0];
+    const a = m.getAsFloat32Array();
+    mask = new Uint8Array(R.n);
+    for (let i = 0; i < R.n; i++) mask[i] = a[i] > 0.5 ? 1 : 0;
+  });
+  R.seg.person = mask;
+  return mask;
+}
+
+async function segmentObjects() {
+  if (R.seg.objects) return R.seg.objects;
+  const seg = await getSegmenter('object');
+  setBusy('Finding the main object…');
+  await nextFrame();
+  let cats = null;
+  seg.segment(R.flat, (res) => { cats = res.categoryMask.getAsUint8Array().slice(); });
+  const areas = new Float64Array(256);
+  for (let i = 0; i < cats.length; i++) areas[cats[i]]++;
+  R.seg.objects = { cats, areas };
+  return R.seg.objects;
+}
+
+function objectMask({ cats, areas }) {
+  let top = -1;
+  for (let c = 1; c < 21; c++) if (areas[c] > 0 && (top < 0 || areas[c] > areas[top])) top = c;
+  if (top < 0) return null;
+  const keep = new Set([top]);
+  for (let c = 1; c < 21; c++) {
+    if (c !== top && areas[c] > 0.25 * areas[top] && !SCENERY.has(c)) keep.add(c);
+  }
+  const mask = new Uint8Array(R.n);
+  let cov = 0;
+  for (let i = 0; i < R.n; i++) if (keep.has(cats[i])) { mask[i] = 1; cov++; }
+  const names = [...keep].map((c) => (AI.labels && AI.labels[c]) || `class ${c}`);
+  return { mask, coverage: cov / R.n, names };
+}
+
+function plainBackgroundMask() {
+  const { frgb, border, n } = R;
+  const med = [0, 1, 2].map((ch) => {
+    const a = new Float32Array(border.length);
+    border.forEach((i, k) => (a[k] = frgb[4 * i + ch]));
+    a.sort();
+    return a[a.length >> 1];
+  });
+  const dist = (i) => Math.hypot(frgb[4 * i] - med[0], frgb[4 * i + 1] - med[1], frgb[4 * i + 2] - med[2]);
+  const bd = new Float32Array(border.length);
+  border.forEach((i, k) => (bd[k] = dist(i)));
+  bd.sort();
+  const uniform = bd[(bd.length * 0.7) | 0] < 32;
+  const thr = Math.max(30, bd[(bd.length * 0.92) | 0] * 1.4);
+  const mask = new Uint8Array(n);
+  let cov = 0;
+  for (let i = 0; i < n; i++) if (dist(i) > thr) { mask[i] = 1; cov++; }
+  return { mask, coverage: cov / n, uniform };
+}
+
+function alphaMask() {
+  const mask = new Uint8Array(R.n);
+  for (let i = 0; i < R.n; i++) mask[i] = R.alpha[i] > 0.5 ? 1 : 0;
+  return mask;
+}
+
+// connected components (4-neighbour) of pixels equal to `val`
+function components(bin, w, h, val) {
+  const n = w * h, lab = new Int32Array(n).fill(-1), areas = [], touch = [];
+  const stack = new Int32Array(n);
+  for (let s = 0; s < n; s++) {
+    if (bin[s] !== val || lab[s] >= 0) continue;
+    const id = areas.length;
+    let sp = 0, area = 0, tb = false;
+    stack[sp++] = s; lab[s] = id;
+    while (sp) {
+      const i = stack[--sp]; area++;
+      const x = i % w, y = (i / w) | 0;
+      if (x === 0 || y === 0 || x === w - 1 || y === h - 1) tb = true;
+      if (x > 0 && bin[i - 1] === val && lab[i - 1] < 0) { lab[i - 1] = id; stack[sp++] = i - 1; }
+      if (x < w - 1 && bin[i + 1] === val && lab[i + 1] < 0) { lab[i + 1] = id; stack[sp++] = i + 1; }
+      if (y > 0 && bin[i - w] === val && lab[i - w] < 0) { lab[i - w] = id; stack[sp++] = i - w; }
+      if (y < h - 1 && bin[i + w] === val && lab[i + w] < 0) { lab[i + w] = id; stack[sp++] = i + w; }
+    }
+    areas.push(area); touch.push(tb);
+  }
+  return { lab, areas, touch };
+}
+
+function boxBlur(src, w, h, r) {
+  const tmp = new Float32Array(w * h), out = new Float32Array(w * h);
+  for (let y = 0; y < h; y++) {
+    let acc = 0; const row = y * w;
+    for (let x = -r; x <= r; x++) acc += src[row + clamp(x, 0, w - 1)];
+    for (let x = 0; x < w; x++) {
+      tmp[row + x] = acc / (2 * r + 1);
+      acc += src[row + Math.min(w - 1, x + r + 1)] - src[row + Math.max(0, x - r)];
+    }
+  }
+  for (let x = 0; x < w; x++) {
+    let acc = 0;
+    for (let y = -r; y <= r; y++) acc += tmp[clamp(y, 0, h - 1) * w + x];
+    for (let y = 0; y < h; y++) {
+      out[y * w + x] = acc / (2 * r + 1);
+      acc += tmp[Math.min(h - 1, y + r + 1) * w + x] - tmp[Math.max(0, y - r) * w + x];
+    }
+  }
+  return out;
+}
+
+// keep the main blobs, fill pin-holes, smooth the jaggies
+function cleanMask(mask, w, h) {
+  const n = w * h;
+  const fg = components(mask, w, h, 1);
+  const maxA = Math.max(0, ...fg.areas);
+  if (!maxA) return null;
+  const out = new Uint8Array(n);
+  for (let i = 0; i < n; i++) {
+    const l = fg.lab[i];
+    if (l >= 0 && fg.areas[l] >= Math.max(n * 0.002, maxA * 0.12)) out[i] = 1;
+  }
+  const bg = components(out, w, h, 0);
+  for (let i = 0; i < n; i++) {
+    const l = bg.lab[i];
+    if (l >= 0 && !bg.touch[l] && bg.areas[l] < n * 0.003) out[i] = 1;
+  }
+  const r = Math.max(1, Math.round(Math.max(w, h) / 300));
+  const f = new Float32Array(n);
+  for (let i = 0; i < n; i++) f[i] = out[i];
+  const b = boxBlur(f, w, h, r);
+  for (let i = 0; i < n; i++) out[i] = b[i] > 0.5 ? 1 : 0;
+  return out;
+}
+
+async function computeSubject(style) {
+  const mode = S.subject;
+  if (mode === 'whole') return { mask: null, label: 'Whole image' };
+  if (mode === 'auto' && style === 'center') return { mask: null, label: 'Whole image (line art)' };
+  if (mode === 'auto' && R.hasAlpha) return { mask: cleanMask(alphaMask(), R.w, R.h), label: 'Transparency of the PNG' };
+
+  const fallback = (why) => {
+    const p = plainBackgroundMask();
+    if (p.uniform && p.coverage > 0.01 && p.coverage < 0.95) {
+      return { mask: cleanMask(p.mask, R.w, R.h), label: 'Plain background removed', note: why };
+    }
+    return { mask: null, label: 'Whole image', note: why };
+  };
+
+  if (mode === 'plain') {
+    const p = plainBackgroundMask();
+    const m = p.coverage > 0.003 ? cleanMask(p.mask, R.w, R.h) : null;
+    return { mask: m, label: m ? 'Plain background removed' : 'Whole image', note: p.uniform ? '' : 'The border is not one flat colour, so this may keep some background.' };
+  }
+
+  try {
+    if (mode === 'person') {
+      const m = await segmentPerson();
+      return { mask: cleanMask(m, R.w, R.h), label: 'Person (AI segmentation)' };
+    }
+    if (mode === 'object') {
+      const o = objectMask(await segmentObjects());
+      if (!o) return { mask: null, label: 'Whole image', note: 'No known object found.' };
+      return { mask: cleanMask(o.mask, R.w, R.h), label: `Object (AI guess: ${o.names.join(' + ')})` };
+    }
+    // auto: ask DeepLab what is in the picture; refine people with the selfie model
+    const objs = await segmentObjects();
+    let fgA = 0;
+    for (let c = 1; c < 21; c++) if (!SCENERY.has(c)) fgA += objs.areas[c];
+    const personA = objs.areas[15];
+    if (personA > 0.004 * R.n && personA >= 0.5 * fgA) {
+      const m = await segmentPerson();
+      let cov = 0; for (let i = 0; i < R.n; i++) cov += m[i];
+      if (cov > 0.01 * R.n) return { mask: cleanMask(m, R.w, R.h), label: 'Person (AI segmentation)' };
+    }
+    const o = objectMask(objs);
+    if (o && o.coverage > 0.015) return { mask: cleanMask(o.mask, R.w, R.h), label: `Object (AI guess: ${o.names.join(' + ')})` };
+    return fallback('');
+  } catch (e) {
+    return fallback('AI segmentation could not load here, so a simpler background test was used.');
+  }
+}
+
+// =====================================================================
+//  3. Lines: Canny edges or ink centerlines → 1-px skeleton
+// =====================================================================
+function gaussianBlur(src, w, h, sigma) {
+  if (sigma < 0.3) return Float32Array.from(src);
+  const r = Math.ceil(sigma * 3), k = new Float32Array(2 * r + 1);
+  let s = 0;
+  for (let i = -r; i <= r; i++) { k[i + r] = Math.exp(-(i * i) / (2 * sigma * sigma)); s += k[i + r]; }
+  for (let i = 0; i < k.length; i++) k[i] /= s;
+  const tmp = new Float32Array(w * h), out = new Float32Array(w * h);
+  for (let y = 0; y < h; y++) {
+    const row = y * w;
+    for (let x = 0; x < w; x++) {
+      let acc = 0;
+      for (let i = -r; i <= r; i++) acc += src[row + clamp(x + i, 0, w - 1)] * k[i + r];
+      tmp[row + x] = acc;
+    }
+  }
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+    let acc = 0;
+    for (let i = -r; i <= r; i++) acc += tmp[clamp(y + i, 0, h - 1) * w + x] * k[i + r];
+    out[y * w + x] = acc;
+  }
+  return out;
+}
+
+function canny(gray, w, h, sigma, detail, region) {
+  const n = w * h;
+  const g = gaussianBlur(gray, w, h, sigma);
+  const mag = new Float32Array(n), dir = new Uint8Array(n);
+  for (let y = 1; y < h - 1; y++) for (let x = 1; x < w - 1; x++) {
+    const i = y * w + x;
+    const gx = -g[i - w - 1] - 2 * g[i - 1] - g[i + w - 1] + g[i - w + 1] + 2 * g[i + 1] + g[i + w + 1];
+    const gy = -g[i - w - 1] - 2 * g[i - w] - g[i - w + 1] + g[i + w - 1] + 2 * g[i + w] + g[i + w + 1];
+    mag[i] = Math.hypot(gx, gy);
+    let a = Math.atan2(gy, gx);
+    if (a < 0) a += Math.PI;
+    dir[i] = a < Math.PI / 8 || a >= 7 * Math.PI / 8 ? 0 : a < 3 * Math.PI / 8 ? 1 : a < 5 * Math.PI / 8 ? 2 : 3;
+  }
+  const nms = new Float32Array(n);
+  const cand = [];
+  for (let y = 1; y < h - 1; y++) for (let x = 1; x < w - 1; x++) {
+    const i = y * w + x, m = mag[i];
+    if (m < 1e-3) continue;
+    let a, b;
+    switch (dir[i]) {
+      case 0: a = mag[i - 1]; b = mag[i + 1]; break;
+      case 1: a = mag[i - w - 1]; b = mag[i + w + 1]; break;
+      case 2: a = mag[i - w]; b = mag[i + w]; break;
+      default: a = mag[i - w + 1]; b = mag[i + w - 1];
+    }
+    if (m >= a && m > b) { nms[i] = m; if (!region || region[i]) cand.push(m); }
+  }
+  const out = new Uint8Array(n);
+  if (!cand.length) return out;
+  const sorted = Float32Array.from(cand).sort();
+  const q = 0.97 - 0.62 * detail;              // detail 0 → top 3 %, detail 1 → top 65 %
+  const high = Math.max(0.02, sorted[Math.min(sorted.length - 1, (sorted.length * q) | 0)]);
+  const low = high * 0.45;
+  const stack = [];
+  for (let i = 0; i < n; i++) if (nms[i] >= high && (!region || region[i])) { out[i] = 1; stack.push(i); }
+  const offs = [-w - 1, -w, -w + 1, -1, 1, w - 1, w, w + 1];
+  while (stack.length) {
+    const i = stack.pop();
+    for (const o of offs) {
+      const j = i + o;
+      if (!out[j] && nms[j] >= low && (!region || region[j])) { out[j] = 1; stack.push(j); }
+    }
+  }
+  return out;
+}
+
+function erode(mask, w, h, r) {
+  let cur = mask;
+  for (let k = 0; k < r; k++) {
+    const nx = new Uint8Array(w * h);
+    for (let y = 1; y < h - 1; y++) for (let x = 1; x < w - 1; x++) {
+      const i = y * w + x;
+      nx[i] = cur[i] & cur[i - 1] & cur[i + 1] & cur[i - w] & cur[i + w];
+    }
+    cur = nx;
+  }
+  return cur;
+}
+
+function outlineOf(mask, w, h) {
+  const out = new Uint8Array(w * h);
+  for (let y = 1; y < h - 1; y++) for (let x = 1; x < w - 1; x++) {
+    const i = y * w + x;
+    if (mask[i] && (!mask[i - 1] || !mask[i + 1] || !mask[i - w] || !mask[i + w])) out[i] = 1;
+  }
+  return out;
+}
+
+// Zhang–Suen thinning (in place)
+function thin(img, w, h) {
+  for (let x = 0; x < w; x++) { img[x] = 0; img[(h - 1) * w + x] = 0; }
+  for (let y = 0; y < h; y++) { img[y * w] = 0; img[y * w + w - 1] = 0; }
+  let on = [];
+  for (let i = 0; i < w * h; i++) if (img[i]) on.push(i);
+  const del = [];
+  let changed = true;
+  while (changed) {
+    changed = false;
+    for (let pass = 0; pass < 2; pass++) {
+      del.length = 0;
+      for (const i of on) {
+        if (!img[i]) continue;
+        const p2 = img[i - w], p3 = img[i - w + 1], p4 = img[i + 1], p5 = img[i + w + 1];
+        const p6 = img[i + w], p7 = img[i + w - 1], p8 = img[i - 1], p9 = img[i - w - 1];
+        const B = p2 + p3 + p4 + p5 + p6 + p7 + p8 + p9;
+        if (B < 2 || B > 6) continue;
+        const A = (!p2 && p3) + (!p3 && p4) + (!p4 && p5) + (!p5 && p6) + (!p6 && p7) + (!p7 && p8) + (!p8 && p9) + (!p9 && p2);
+        if (A !== 1) continue;
+        if (pass === 0 ? (p2 && p4 && p6) || (p4 && p6 && p8) : (p2 && p4 && p8) || (p2 && p6 && p8)) continue;
+        del.push(i);
+      }
+      for (const i of del) img[i] = 0;
+      if (del.length) changed = true;
+    }
+    on = on.filter((i) => img[i]);
+  }
+  return img;
+}
+
+// neighbour ring order: E, SE, S, SW, W, NW, N, NE
+const RING = [[1, 0], [1, 1], [0, 1], [-1, 1], [-1, 0], [-1, -1], [0, -1], [1, -1]];
+// For each 8-bit neighbour pattern: how many 8-connected groups the neighbours form
+const GROUPS = (() => {
+  const t = new Uint8Array(256);
+  for (let m = 0; m < 256; m++) {
+    const parent = [0, 1, 2, 3, 4, 5, 6, 7];
+    const find = (a) => (parent[a] === a ? a : (parent[a] = find(parent[a])));
+    for (let a = 0; a < 8; a++) for (let b = a + 1; b < 8; b++) {
+      if (!((m >> a) & 1) || !((m >> b) & 1)) continue;
+      const dx = RING[a][0] - RING[b][0], dy = RING[a][1] - RING[b][1];
+      if (Math.abs(dx) <= 1 && Math.abs(dy) <= 1) parent[find(a)] = find(b);
+    }
+    const roots = new Set();
+    for (let a = 0; a < 8; a++) if ((m >> a) & 1) roots.add(find(a));
+    t[m] = roots.size;
+  }
+  return t;
+})();
+
+function ringMask(img, i, w) {
+  let m = 0;
+  for (let k = 0; k < 8; k++) if (img[i + RING[k][1] * w + RING[k][0]]) m |= 1 << k;
+  return m;
+}
+function popcount(m) { let c = 0; while (m) { c += m & 1; m >>= 1; } return c; }
+
+// remove staircase corners so lines are cleanly 8-connected
+function removeStairs(img, w, h) {
+  for (let y = 1; y < h - 1; y++) for (let x = 1; x < w - 1; x++) {
+    const i = y * w + x;
+    if (!img[i]) continue;
+    const m = ringMask(img, i, w), b = popcount(m);
+    if ((b === 2 || b === 3) && GROUPS[m] === 1) img[i] = 0;
+  }
+}
+
+// trim short whiskers that skeletons grow at corners
+function pruneSpurs(img, w, h, maxLen) {
+  const deg = (i) => popcount(ringMask(img, i, w));
+  for (let iter = 0; iter < 2; iter++) {
+    const ends = [];
+    for (let i = w; i < w * (h - 1); i++) if (img[i] && deg(i) === 1) ends.push(i);
+    for (const e of ends) {
+      if (!img[e] || deg(e) !== 1) continue;
+      const path = [e];
+      let prev = -1, cur = e, junction = false;
+      while (path.length <= maxLen) {
+        let next = -1, cnt = 0;
+        for (const [dx, dy] of RING) {
+          const j = cur + dy * w + dx;
+          if (img[j] && j !== prev && !path.includes(j)) { cnt++; next = j; }
+        }
+        if (cnt === 0) break;
+        if (cnt > 1 || deg(next) >= 3) { junction = true; break; }
+        prev = cur; cur = next; path.push(cur);
+      }
+      if (junction && path.length <= maxLen) for (const p of path) img[p] = 0;
+    }
+  }
+}
+
+// =====================================================================
+//  4. Strokes: trace the skeleton into polylines
+// =====================================================================
+function traceStrokes(img, w, h) {
+  const offs = RING.map(([dx, dy]) => dy * w + dx);
+  const visited = new Uint8Array(w * h);
+  const pix = [];
+  for (let i = 0; i < w * h; i++) if (img[i]) pix.push(i);
+  const freeNbrs = (i) => {
+    let c = 0;
+    for (const o of offs) if (img[i + o] && !visited[i + o]) c++;
+    return c;
+  };
+  const walk = (start) => {
+    const out = [];
+    let cur = start, pdx = 0, pdy = 0;
+    for (;;) {
+      let best = -1, bestScore = -Infinity, bk = 0;
+      for (let k = 0; k < 8; k++) {
+        const j = cur + offs[k];
+        if (!img[j] || visited[j]) continue;
+        const [dx, dy] = RING[k];
+        const diag = dx !== 0 && dy !== 0;
+        let score = (pdx || pdy) ? (dx * pdx + dy * pdy) / ((diag ? Math.SQRT2 : 1) * Math.hypot(pdx, pdy)) : 0;
+        if (!diag) score += 0.15;
+        if (score > bestScore) { bestScore = score; best = j; bk = k; }
+      }
+      if (best < 0) break;
+      visited[best] = 1;
+      out.push(best);
+      pdx = 0.5 * pdx + RING[bk][0];
+      pdy = 0.5 * pdy + RING[bk][1];
+      cur = best;
+    }
+    return out;
+  };
+  const strokes = [];
+  const traceFrom = (s) => {
+    visited[s] = 1;
+    const fwd = walk(s);
+    const bwd = walk(s);
+    const idx = bwd.reverse();
+    idx.push(s);
+    for (const i of fwd) idx.push(i);
+    const xs = new Float32Array(idx.length), ys = new Float32Array(idx.length);
+    idx.forEach((p, k) => { xs[k] = p % w; ys[k] = (p / w) | 0; });
+    const m = idx.length;
+    const closed = m > 8 && Math.abs(xs[0] - xs[m - 1]) <= 1 && Math.abs(ys[0] - ys[m - 1]) <= 1;
+    strokes.push({ xs, ys, closed });
+  };
+  for (;;) {
+    let any = false;
+    for (const i of pix) if (!visited[i] && freeNbrs(i) <= 1) { traceFrom(i); any = true; }
+    if (any) continue;
+    let loop = -1;
+    for (const i of pix) if (!visited[i]) { loop = i; break; }
+    if (loop < 0) break;
+    traceFrom(loop);
+  }
+  return strokes;
+}
+
+function smoothStroke(s, r = 2) {
+  const m = s.xs.length;
+  if (m < 5) return s;
+  const xs = new Float32Array(m), ys = new Float32Array(m);
+  for (let k = 0; k < m; k++) {
+    let sx = 0, sy = 0, c = 0;
+    for (let j = -r; j <= r; j++) {
+      let q = k + j;
+      if (s.closed) q = (q + m) % m;
+      else if (q < 0 || q >= m) continue;
+      sx += s.xs[q]; sy += s.ys[q]; c++;
+    }
+    xs[k] = sx / c; ys[k] = sy / c;
+  }
+  if (!s.closed) { xs[0] = s.xs[0]; ys[0] = s.ys[0]; xs[m - 1] = s.xs[m - 1]; ys[m - 1] = s.ys[m - 1]; }
+  return { xs, ys, closed: s.closed };
+}
+
+// =====================================================================
+//  5. Order strokes into one tour (greedy nearest neighbour + 2-opt)
+// =====================================================================
+const entryPt = (s, o) => {
+  const m = s.xs.length;
+  const k = s.closed ? o.rot : o.rev ? m - 1 : 0;
+  return [s.xs[k], s.ys[k]];
+};
+const exitPt = (s, o) => {
+  const m = s.xs.length;
+  const k = s.closed ? o.rot : o.rev ? 0 : m - 1;
+  return [s.xs[k], s.ys[k]];
+};
+
+function orderStrokes(strokes, budgetMs = 160) {
+  const n = strokes.length;
+  if (!n) return [];
+  let first = 0;
+  for (let i = 1; i < n; i++) if (strokes[i].xs.length > strokes[first].xs.length) first = i;
+  const used = new Uint8Array(n);
+  used[first] = 1;
+  const seq = [{ i: first, rev: false, rot: 0 }];
+  let [ex, ey] = exitPt(strokes[first], seq[0]);
+  for (let k = 1; k < n; k++) {
+    let best = Infinity, bi = -1, brev = false, brot = 0;
+    for (let i = 0; i < n; i++) {
+      if (used[i]) continue;
+      const s = strokes[i], m = s.xs.length;
+      if (s.closed) {
+        const step = Math.max(1, (m / 32) | 0);
+        for (let j = 0; j < m; j += step) {
+          const d = (s.xs[j] - ex) ** 2 + (s.ys[j] - ey) ** 2;
+          if (d < best) { best = d; bi = i; brev = false; brot = j; }
+        }
+      } else {
+        let d = (s.xs[0] - ex) ** 2 + (s.ys[0] - ey) ** 2;
+        if (d < best) { best = d; bi = i; brev = false; brot = 0; }
+        d = (s.xs[m - 1] - ex) ** 2 + (s.ys[m - 1] - ey) ** 2;
+        if (d < best) { best = d; bi = i; brev = true; brot = 0; }
+      }
+    }
+    used[bi] = 1;
+    const o = { i: bi, rev: brev, rot: brot };
+    seq.push(o);
+    [ex, ey] = exitPt(strokes[bi], o);
+  }
+  twoOpt(seq, strokes, budgetMs);
+  return seq;
+}
+
+function twoOpt(seq, strokes, budgetMs) {
+  const n = seq.length;
+  if (n < 4) return;
+  const ax = new Float64Array(n), ay = new Float64Array(n), bx = new Float64Array(n), by = new Float64Array(n);
+  for (let k = 0; k < n; k++) {
+    [ax[k], ay[k]] = entryPt(strokes[seq[k].i], seq[k]);
+    [bx[k], by[k]] = exitPt(strokes[seq[k].i], seq[k]);
+  }
+  const d = (x1, y1, x2, y2) => Math.hypot(x1 - x2, y1 - y2);
+  const t0 = performance.now();
+  let improved = true;
+  while (improved && performance.now() - t0 < budgetMs) {
+    improved = false;
+    for (let i = 1; i < n - 1; i++) {
+      for (let j = i + 1; j < n; j++) {
+        const jn = j + 1 < n ? j + 1 : 0;
+        const before = d(bx[i - 1], by[i - 1], ax[i], ay[i]) + d(bx[j], by[j], ax[jn], ay[jn]);
+        const after = d(bx[i - 1], by[i - 1], bx[j], by[j]) + d(ax[i], ay[i], ax[jn], ay[jn]);
+        if (after < before - 1e-6) {
+          for (let l = i, r = j; l < r; l++, r--) {
+            [seq[l], seq[r]] = [seq[r], seq[l]];
+            [ax[l], ax[r]] = [ax[r], ax[l]]; [ay[l], ay[r]] = [ay[r], ay[l]];
+            [bx[l], bx[r]] = [bx[r], bx[l]]; [by[l], by[r]] = [by[r], by[l]];
+          }
+          for (let l = i; l <= j; l++) {
+            seq[l] = { ...seq[l], rev: !seq[l].rev };
+            [ax[l], bx[l]] = [bx[l], ax[l]];
+            [ay[l], by[l]] = [by[l], ay[l]];
+          }
+          improved = true;
+        }
+      }
+      if (performance.now() - t0 > budgetMs) break;
+    }
+  }
+}
+
+// =====================================================================
+//  6. One closed path → M evenly spaced samples
+// =====================================================================
+function assemblePath(strokes, seq) {
+  const xs = [], ys = [], pen = [];
+  for (const o of seq) {
+    const s = strokes[o.i], m = s.xs.length;
+    const count = s.closed ? m + 1 : m;
+    for (let q = 0; q < count; q++) {
+      let k;
+      if (s.closed) k = (((o.rot + (o.rev ? -q : q)) % m) + m) % m;
+      else k = o.rev ? m - 1 - q : q;
+      xs.push(s.xs[k]); ys.push(s.ys[k]); pen.push(q < count - 1 ? 1 : 0);
+    }
+  }
+  return { xs, ys, pen };
+}
+
+function resample(path, M, jumpWeight = 0.4) {
+  const { xs, ys, pen } = path;
+  const n = xs.length;
+  const seg = new Float64Array(n);
+  let total = 0, inkLen = 0, jumps = 0;
+  for (let k = 0; k < n; k++) {
+    const k2 = (k + 1) % n;
+    const L = Math.hypot(xs[k2] - xs[k], ys[k2] - ys[k]);
+    if (pen[k]) inkLen += L; else if (L > 1.5) jumps++;
+    seg[k] = L * (pen[k] ? 1 : jumpWeight);
+    total += seg[k];
+  }
+  const X = new Float64Array(M), Y = new Float64Array(M), P = new Uint8Array(M);
+  let k = 0, acc = 0;
+  for (let m = 0; m < M; m++) {
+    const target = (m * total) / M;
+    while (k < n - 1 && acc + seg[k] < target) { acc += seg[k]; k++; }
+    const u = seg[k] > 0 ? (target - acc) / seg[k] : 0;
+    const k2 = (k + 1) % n;
+    X[m] = xs[k] + (xs[k2] - xs[k]) * u;
+    Y[m] = ys[k] + (ys[k2] - ys[k]) * u;
+    P[m] = pen[k];
+  }
+  return { X, Y, P, inkLen, jumps };
+}
+
+// =====================================================================
+//  7. FFT and the epicycle coefficients
+// =====================================================================
+function fft(re, im, inverse) {
+  const n = re.length;
+  for (let i = 1, j = 0; i < n; i++) {
+    let bit = n >> 1;
+    for (; j & bit; bit >>= 1) j ^= bit;
+    j ^= bit;
+    if (i < j) { let t = re[i]; re[i] = re[j]; re[j] = t; t = im[i]; im[i] = im[j]; im[j] = t; }
+  }
+  for (let len = 2; len <= n; len <<= 1) {
+    const half = len >> 1;
+    const ang = ((inverse ? 2 : -2) * Math.PI) / len;
+    for (let i = 0; i < n; i += len) {
+      for (let k = 0; k < half; k++) {
+        const cr = Math.cos(ang * k), ci = Math.sin(ang * k);
+        const a = i + k, b = a + half;
+        const tr = re[b] * cr - im[b] * ci, ti = re[b] * ci + im[b] * cr;
+        re[b] = re[a] - tr; im[b] = im[a] - ti;
+        re[a] += tr; im[a] += ti;
+      }
+    }
+  }
+}
+
+// c_k = (1/M) Σ z_n e^{-2πi kn/M};  z(t) = Σ c_k e^{2πi k t}
+function computeFourier(X, Y, P, M) {
+  const re = Float64Array.from(X), im = Float64Array.from(Y);
+  fft(re, im, false);
+  for (let k = 0; k < M; k++) { re[k] /= M; im[k] /= M; }
+  const idx = [];
+  for (let k = 1; k < M; k++) idx.push(k);
+  const amp = (k) => Math.hypot(re[k], im[k]);
+  idx.sort((a, b) => amp(b) - amp(a));
+  const K = M - 1;
+  const freq = new Int32Array(K), cRe = new Float64Array(K), cIm = new Float64Array(K), A = new Float64Array(K);
+  const cum = new Float64Array(K + 1);
+  const rank = new Int32Array(M); // rank of frequency index (f + M/2)
+  idx.forEach((k, r) => {
+    const f = k < M / 2 ? k : k - M;
+    freq[r] = f; cRe[r] = re[k]; cIm[r] = im[k]; A[r] = amp(k);
+    cum[r + 1] = cum[r] + A[r] * A[r];
+    rank[f + M / 2] = r;
+  });
+  rank[M / 2] = -1; // DC
+  return { M, dcRe: re[0], dcIm: im[0], freq, cRe, cIm, amp: A, cum, rank, P };
+}
+
+// Parseval: mean squared distance between path and N-term curve = Σ |c_k|² over the dropped terms
+function rmsError(N) {
+  const tot = F.cum[F.cum.length - 1];
+  return Math.sqrt(Math.max(0, tot - F.cum[N]));
+}
+// smallest N whose average error is under ~0.8 px of the working image
+function defaultN() {
+  for (let N = 1; N < F.M; N++) if (rmsError(N) < 0.8) return Math.min(F.M - 1, Math.max(N, 60));
+  return F.M - 1;
+}
+
+function buildCurve(N) {
+  const M = F.M, L = Math.max(4096, 2 * M);
+  const re = new Float64Array(L), im = new Float64Array(L);
+  re[0] = F.dcRe; im[0] = F.dcIm;
+  for (let r = 0; r < N; r++) {
+    const f = F.freq[r], k = f >= 0 ? f : L + f;
+    re[k] += F.cRe[r]; im[k] += F.cIm[r];
+  }
+  fft(re, im, true);
+  const pen = new Uint8Array(L), ratio = M / L;
+  for (let n = 0; n < L; n++) pen[n] = F.P[Math.floor(n * ratio)];
+  let maxF = 0;
+  for (let r = 0; r < N; r++) maxF = Math.max(maxF, Math.abs(F.freq[r]));
+  return { L, xs: re, ys: im, pen, N, maxF };
+}
+
+// Bounding box of what will be drawn (subject mask, or ink for line art), in source pixels
+function contentCrop(style) {
+  const { w, h, n } = R;
+  let on;
+  if (SUB.mask) on = SUB.mask;
+  else if (style === 'center') {
+    const v = inkValues(), thr = Math.max(0.1, otsu(v));
+    on = new Uint8Array(n);
+    for (let i = 0; i < n; i++) on[i] = v[i] > thr ? 1 : 0;
+  } else return null;
+  let x0 = w, y0 = h, x1 = -1, y1 = -1;
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) if (on[y * w + x]) {
+    if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y;
+  }
+  if (x1 < 0) return null;
+  const m = Math.round(0.05 * Math.max(x1 - x0, y1 - y0)) + 4;
+  x0 = Math.max(0, x0 - m); y0 = Math.max(0, y0 - m); x1 = Math.min(w - 1, x1 + m); y1 = Math.min(h - 1, y1 + m);
+  const bw = x1 - x0 + 1, bh = y1 - y0 + 1;
+  if (bw * bh > 0.6 * n) return null; // already fills the frame
+  const k = R.srcW / w;
+  return { x: x0 * k, y: y0 * k, w: bw * k, h: bh * k };
+}
+
+// =====================================================================
+//  Pipeline orchestration
+// =====================================================================
+const LV = { raster: 0, mask: 1, lines: 2, dft: 3 };
+let gen = 0;
+
+async function rebuild(from) {
+  if (!S.source) return;
+  const my = ++gen;
+  const stale = () => my !== gen;
+  const lv = LV[from];
+  try {
+    setBusy('Reading the picture…');
+    await nextFrame();
+    if (lv <= 0 || !R0) { R0 = rasterize(S.source, S.res); R = R0; SUB = null; }
+    if (stale()) return;
+
+    const keepR = R;
+    R = R0;
+    const style = S.style === 'auto' ? (detectLineArt() ? 'center' : 'edges') : S.style;
+    R = keepR;
+
+    if (lv <= 1 || !SUB || SUB.style !== style) {
+      R = R0;
+      SUB = await computeSubject(style);
+      if (stale()) return;
+      // zoom in on the subject so small figures get the full working resolution
+      const crop = contentCrop(style);
+      if (crop) {
+        setBusy('Zooming in on the subject…');
+        await nextFrame();
+        R = rasterize(S.source, S.res, crop);
+        R.lineArt = R0.lineArt;
+        const sub2 = await computeSubject(style);
+        if (stale()) return;
+        if (sub2.mask || !SUB.mask) { SUB = sub2; SUB.cropped = true; }
+        else R = R0;
+      }
+      SUB.style = style;
+    }
+    R.styleUsed = style;
+
+    if (lv <= 2 || !LN) {
+      setBusy('Tracing lines…');
+      await nextFrame();
+      LN = extractLines(style);
+      if (stale()) return;
+    }
+
+    if (!LN.strokes.length) {
+      F = null; C = null;
+      setBusy(null);
+      drawThumbs();
+      setStatus(`<b>No lines found.</b> ${SUB.label}. Raise Detail, lower “Drop strokes shorter than”, or turn on Inner details.`, true);
+      updateNUI(); updateSpectrum(); draw();
+      return;
+    }
+
+    setBusy('Taking the Fourier transform…');
+    await nextFrame();
+    const path = assemblePath(LN.strokes, LN.seq);
+    const totalInk = path.xs.length;
+    const M = S.mSel === 'auto' ? clamp(nextPow2(totalInk / 2.2), 1024, 8192) : +S.mSel;
+    const smp = resample(path, M);
+    // center on the drawing's bounding box
+    let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+    for (let i = 0; i < path.xs.length; i++) {
+      x0 = Math.min(x0, path.xs[i]); x1 = Math.max(x1, path.xs[i]);
+      y0 = Math.min(y0, path.ys[i]); y1 = Math.max(y1, path.ys[i]);
+    }
+    const cx = (x0 + x1) / 2, cy = (y0 + y1) / 2;
+    for (let m = 0; m < M; m++) { smp.X[m] -= cx; smp.Y[m] -= cy; }
+    F = computeFourier(smp.X, smp.Y, smp.P, M);
+    F.bw = Math.max(8, x1 - x0); F.bh = Math.max(8, y1 - y0);
+    F.inkLen = smp.inkLen; F.jumps = smp.jumps;
+    if (stale()) return;
+
+    if (lv <= 0 && !S.userN) S.N = defaultN();
+    S.N = clamp(S.N, 1, M - 1);
+    C = buildCurve(S.N);
+    chain = new Float64Array(2 * (M + 1));
+    if (lv <= 0) { fitView(true); S.t = 0; setT(reduceMotion ? 1 : 0, true); holdUntil = 0; }
+    else setT(Math.min(S.t, 1), true);
+    setBusy(null);
+    drawThumbs();
+    updateStatus();
+    updateNUI();
+    updateSpectrum();
+  } catch (e) {
+    if (stale()) return;
+    console.error(e);
+    setBusy(null);
+    setStatus(`<b>Something went wrong:</b> ${escapeHtml(e.message || String(e))}`, true);
+  }
+}
+
+function extractLines(style) {
+  const { w, h, n } = R;
+  const region = SUB.mask;
+  const scale = Math.max(w, h) / 512;
+  let E;
+  if (style === 'center') {
+    const v = inkValues();
+    const base = Math.max(0.1, otsu(v));
+    const thr = clamp(base * (1.45 - 0.9 * S.detail), 0.04, 0.95);
+    E = new Uint8Array(n);
+    for (let i = 0; i < n; i++) if (v[i] > thr && (!region || region[i])) E[i] = 1;
+    thin(E, w, h);
+    removeStairs(E, w, h);
+    pruneSpurs(E, w, h, Math.round(6 * scale));
+  } else {
+    E = new Uint8Array(n);
+    if (S.details) {
+      const inner = region ? erode(region, w, h, Math.max(2, Math.round(3 * scale))) : null;
+      const edges = canny(R.gray, w, h, S.smooth * scale, S.detail, inner);
+      for (let i = 0; i < n; i++) E[i] = edges[i];
+    }
+    if (S.outline && region) {
+      const o = outlineOf(region, w, h);
+      for (let i = 0; i < n; i++) if (o[i]) E[i] = 1;
+    }
+    thin(E, w, h);
+    removeStairs(E, w, h);
+  }
+  const minLen = Math.max(2, S.minLen * scale);
+  const raw = traceStrokes(E, w, h);
+  const strokes = raw.filter((s) => s.xs.length >= minLen).map((s) => smoothStroke(smoothStroke(s, 3), 2));
+  const seq = orderStrokes(strokes);
+  return { strokes, seq, dropped: raw.length - strokes.length };
+}
+
+// =====================================================================
+//  Drawing / animation
+// =====================================================================
+const view = $('view'), vctx = view.getContext('2d');
+let W = 0, H = 0, DPR = 1;
+let colors = {};
+let chain = new Float64Array(2);
+const cam = { x: 0, y: 0, z: 1 }, camT = { x: 0, y: 0, z: 1 };
+let fitScale = 1;
+let trail = null, ghost = null;
+let holdUntil = 0, dirty = true;
+
+function readColors() {
+  const cs = getComputedStyle(document.documentElement);
+  const g = (k) => cs.getPropertyValue(k).trim();
+  colors = {
+    stage: g('--c-stage'), ink: g('--c-ink'), orbit: g('--c-orbit'), arm: g('--c-arm'),
+    ghost: g('--c-ghost'), jump: g('--c-jump'), tip: g('--c-tip'), bar: g('--c-bar'),
+    barOff: g('--c-bar-off'), muted: g('--muted'), fg: g('--fg'), line: g('--line'),
+  };
+  dirty = true;
+  updateSpectrum();
+  drawThumbs();
+}
+
+function resize() {
+  const r = view.getBoundingClientRect();
+  DPR = Math.min(2.5, window.devicePixelRatio || 1);
+  W = Math.max(1, r.width); H = Math.max(1, r.height);
+  view.width = Math.round(W * DPR); view.height = Math.round(H * DPR);
+  fitView(false);
+  dirty = true;
+  updateSpectrum();
+}
+
+function fitView(snap) {
+  if (!F) return;
+  const padX = 48, padTop = 70, padBot = 80;
+  fitScale = Math.max(0.01, Math.min((W - padX * 2) / F.bw, (H - padTop - padBot) / F.bh));
+  camT.x = 0; camT.y = -((padTop - padBot) / 2) / fitScale; camT.z = 1;
+  if (snap) Object.assign(cam, camT);
+}
+
+function resetTrail() {
+  trail = { upto: 0, down: new Path2D(), up: new Path2D(), lastDown: -2, lastUp: -2 };
+}
+function extendTrail(to) {
+  if (!C) return;
+  const { xs, ys, pen } = C;
+  for (let n = trail.upto; n < to; n++) {
+    if (n === 0) continue;
+    const down = pen[n - 1] && pen[n];
+    if (down) {
+      if (trail.lastDown !== n - 1) trail.down.moveTo(xs[n - 1], ys[n - 1]);
+      trail.down.lineTo(xs[n], ys[n]); trail.lastDown = n;
+    } else {
+      if (trail.lastUp !== n - 1) trail.up.moveTo(xs[n - 1], ys[n - 1]);
+      trail.up.lineTo(xs[n], ys[n]); trail.lastUp = n;
+    }
+  }
+  trail.upto = Math.max(trail.upto, to);
+}
+function buildGhost() {
+  ghost = { down: new Path2D(), up: new Path2D() };
+  if (!C) return;
+  const { xs, ys, pen, L } = C;
+  let ld = -2, lu = -2;
+  for (let n = 1; n <= L; n++) {
+    const a = n - 1, b = n % L;
+    if (pen[a] && pen[b]) {
+      if (ld !== a) ghost.down.moveTo(xs[a], ys[a]);
+      ghost.down.lineTo(xs[b], ys[b]); ld = n;
+    } else {
+      if (lu !== a) ghost.up.moveTo(xs[a], ys[a]);
+      ghost.up.lineTo(xs[b], ys[b]); lu = n;
+    }
+  }
+}
+
+function setT(t, rebuildTrail = false) {
+  if (!C) return;
+  t = clamp(t, 0, 1);
+  if (rebuildTrail || !trail || t < S.t) resetTrail();
+  if (rebuildTrail) buildGhost();
+  S.t = t;
+  extendTrail(Math.min(C.L, Math.floor(t * C.L) + 1));
+  dirty = true;
+}
+
+function epicycleChain(t) {
+  const N = C.N;
+  let x = F.dcRe, y = F.dcIm;
+  chain[0] = x; chain[1] = y;
+  const tau = 2 * Math.PI * t;
+  for (let r = 0; r < N; r++) {
+    const a = tau * F.freq[r], c = Math.cos(a), s = Math.sin(a);
+    x += F.cRe[r] * c - F.cIm[r] * s;
+    y += F.cRe[r] * s + F.cIm[r] * c;
+    chain[2 * r + 2] = x; chain[2 * r + 3] = y;
+  }
+  return [x, y];
+}
+
+function draw() {
+  const ctx = vctx;
+  ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+  ctx.fillStyle = colors.stage;
+  ctx.fillRect(0, 0, W, H);
+  if (!F || !C) return;
+
+  const tip = epicycleChain(S.t);
+  const k = reduceMotion ? 1 : 0.16;
+  if (S.follow) { camT.x = tip[0]; camT.y = tip[1]; camT.z = S.followZoom; }
+  cam.x += (camT.x - cam.x) * (S.follow ? Math.max(k, 0.35) : k);
+  cam.y += (camT.y - cam.y) * (S.follow ? Math.max(k, 0.35) : k);
+  cam.z += (camT.z - cam.z) * k;
+
+  const sc = fitScale * cam.z, px = 1 / sc;
+  ctx.setTransform(DPR * sc, 0, 0, DPR * sc, DPR * (W / 2 - cam.x * sc), DPR * (H / 2 - cam.y * sc));
+  ctx.lineJoin = 'round'; ctx.lineCap = 'round';
+
+  if (S.showGhost && ghost) {
+    ctx.strokeStyle = colors.ghost;
+    ctx.lineWidth = Math.max(1, S.lineW) * px;
+    ctx.stroke(ghost.down);
+  }
+  if (S.showJumps) {
+    ctx.setLineDash([3 * px, 4 * px]);
+    ctx.strokeStyle = colors.jump;
+    ctx.lineWidth = 1 * px;
+    ctx.stroke(trail.up);
+    ctx.setLineDash([]);
+  }
+  ctx.strokeStyle = colors.ink;
+  ctx.lineWidth = S.lineW * px;
+  ctx.stroke(trail.down);
+  // last partial segment up to the exact pen position
+  const n = Math.min(C.L - 1, Math.floor(S.t * C.L));
+  if (C.pen[n] && S.t < 1) {
+    ctx.beginPath(); ctx.moveTo(C.xs[n], C.ys[n]); ctx.lineTo(tip[0], tip[1]); ctx.stroke();
+  }
+
+  const N = C.N;
+  if (S.showCircles) {
+    ctx.beginPath();
+    const minR = 0.8 * px;
+    for (let r = 0; r < N; r++) {
+      const rad = F.amp[r];
+      if (rad < minR) break; // sorted by size, the rest are smaller
+      const cx = chain[2 * r], cy = chain[2 * r + 1];
+      ctx.moveTo(cx + rad, cy);
+      ctx.arc(cx, cy, rad, 0, 2 * Math.PI);
+    }
+    ctx.strokeStyle = colors.orbit;
+    ctx.lineWidth = 1 * px;
+    ctx.stroke();
+  }
+  if (S.showArms) {
+    ctx.beginPath();
+    ctx.moveTo(chain[0], chain[1]);
+    for (let r = 1; r <= N; r++) ctx.lineTo(chain[2 * r], chain[2 * r + 1]);
+    ctx.strokeStyle = colors.arm;
+    ctx.lineWidth = 1 * px;
+    ctx.stroke();
+  }
+  ctx.beginPath();
+  ctx.arc(tip[0], tip[1], 3.2 * px, 0, 2 * Math.PI);
+  ctx.fillStyle = colors.tip;
+  ctx.fill();
+}
+
+let last = performance.now(), lastHud = 0;
+function tick(now) {
+  const dt = Math.min(0.1, (now - last) / 1000);
+  last = now;
+  if (S.playing && C) {
+    if (holdUntil) {
+      if (now >= holdUntil) { holdUntil = 0; setT(0); }
+    } else {
+      let t = S.t + dt / S.cycleSec;
+      if (t >= 1) {
+        t = 1;
+        if (S.loop) holdUntil = now + 1800;
+        else setPlaying(false);
+      }
+      setT(t);
+    }
+  }
+  const moving = Math.abs(cam.x - camT.x) + Math.abs(cam.y - camT.y) + Math.abs(cam.z - camT.z) > 1e-4;
+  if (dirty || moving || S.playing) {
+    draw();
+    dirty = false;
+    if (now - lastHud > 120) { updateHud(); lastHud = now; }
+  }
+  requestAnimationFrame(tick);
+}
+
+// =====================================================================
+//  UI
+// =====================================================================
+function escapeHtml(s) { return String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])); }
+function errText(e) { return e < 0.01 ? '<0.01 px' : `${e < 10 ? e.toFixed(2) : e.toFixed(0)} px`; }
+function pctText(p) { return p >= 99.995 ? '99.99+' : p.toFixed(p >= 99 ? 2 : 1); }
+function setStatus(html, err = false) { const el = $('status'); el.innerHTML = html; el.classList.toggle('err', err); }
+function setBusy(text) { $('busy').hidden = !text; if (text) $('busyText').textContent = text; }
+
+function updateStatus() {
+  if (!LN || !F) return;
+  const style = R.styleUsed === 'center' ? 'ink centerlines' : 'edges';
+  const note = (SUB.cropped ? ' Cropped to the subject.' : '') + (SUB.note ? ` ${escapeHtml(SUB.note)}` : '');
+  setStatus(`<b>${escapeHtml(SUB.label)}</b>, ${style}. ${fmt(LN.strokes.length)} strokes joined into one path with ${fmt(F.jumps)} pen lifts, ${fmt(Math.round(F.inkLen))} px of line, sampled at M = ${fmt(F.M)}.${note}`);
+  $('subjectHint').textContent = SUB.label;
+}
+
+const SUBJECT_HINTS = {
+  auto: 'Picks for you: AI person or object segmentation for photos, transparency for cut-out PNGs, whole image for line art.',
+  person: 'AI selfie segmentation. Keeps the person, including face, hair and hands; drops the background.',
+  object: 'AI DeepLab segmentation for 20 everyday classes (cat, dog, car, bird, horse…).',
+  plain: 'Removes a flat, single-colour background sampled from the picture’s border. No AI needed.',
+  whole: 'Uses every edge in the picture, background included.',
+};
+
+function nToSlider(N) {
+  const max = F ? F.M - 1 : 1;
+  return Math.round((Math.log(N) / Math.log(Math.max(2, max))) * 1000);
+}
+function sliderToN(v) {
+  const max = F ? F.M - 1 : 1;
+  return clamp(Math.round(Math.exp((v / 1000) * Math.log(Math.max(2, max)))), 1, max);
+}
+
+function updateNUI() {
+  const max = F ? F.M - 1 : 0;
+  $('nBig').textContent = fmt(S.N);
+  $('nMax').textContent = F ? fmt(max) : '–';
+  $('nInput').value = S.N;
+  $('nInput').max = max || 1;
+  if (document.activeElement !== $('nSlider')) $('nSlider').value = nToSlider(S.N);
+  if (F) {
+    const pct = (100 * F.cum[S.N]) / F.cum[F.cum.length - 1];
+    const err = rmsError(S.N);
+    // accuracy meter on a log scale: 100 px error = empty, 0.1 px = full
+    const fill = clamp((2 - Math.log10(Math.max(err, 1e-6))) / 3, 0, 1);
+    $('meter').style.width = `${(fill * 100).toFixed(1)}%`;
+    $('meterText').innerHTML = `Average error <b>${errText(err)}</b> from the traced line, keeping ${pctText(pct)}% of its energy (Parseval). The fastest circle turns <b>${fmt(C.maxF)}</b> times per drawing.`;
+  } else {
+    $('meter').style.width = '0';
+    $('meterText').textContent = '';
+  }
+  updateHud();
+}
+
+function updateHud() {
+  if (!F || !C) { $('hudN').textContent = '–'; $('hudLine1').textContent = ''; $('hudLine2').textContent = ''; return; }
+  $('hudN').textContent = fmt(S.N);
+  $('hudLine1').textContent = `of ${fmt(F.M - 1)} · avg error ${errText(rmsError(S.N))}`;
+  $('hudLine2').textContent = `t = ${S.t.toFixed(3)} · ${fmt(Math.floor(S.t * F.M))} / ${fmt(F.M)} samples`;
+  if (document.activeElement !== $('scrub')) $('scrub').value = Math.round(S.t * 1000);
+  $('tOut').textContent = `${Math.round(S.t * 100)}%`;
+}
+
+function setN(N, fromUser = true) {
+  if (!F) return;
+  N = clamp(Math.round(N), 1, F.M - 1);
+  if (fromUser) S.userN = true;
+  if (N === S.N && C && C.N === N) { updateNUI(); return; }
+  S.N = N;
+  C = buildCurve(N);
+  setT(S.t, true);
+  updateNUI();
+  updateSpectrum();
+}
+
+function setPlaying(p) {
+  S.playing = p;
+  if (p && S.t >= 1) { holdUntil = 0; setT(0); }
+  $('icoPause').hidden = !p; $('icoPlay').hidden = p;
+  $('play').setAttribute('aria-label', p ? 'Pause' : 'Play');
+  dirty = true;
+}
+
+function setFollow(on) {
+  S.follow = on;
+  $('optFollow').checked = on;
+  $('followBtn').setAttribute('aria-pressed', String(on));
+  if (!on) fitView(false);
+  dirty = true;
+}
+
+// ----- spectrum chart -----
+let specHover = null;
+function updateSpectrum() {
+  const cv = $('spec');
+  const r = cv.getBoundingClientRect();
+  if (!r.width) return;
+  const dpr = Math.min(2.5, window.devicePixelRatio || 1);
+  cv.width = Math.round(r.width * dpr); cv.height = Math.round(r.height * dpr);
+  const ctx = cv.getContext('2d');
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  const w = r.width, h = r.height;
+  ctx.clearRect(0, 0, w, h);
+  if (!F) return;
+  const M = F.M, half = M / 2;
+  const span = Math.min(half - 1, Math.max(32, Math.floor((w - 16) / 2.2)));
+  const top = Math.log10(F.amp[0]), bot = top - 4.5;
+  const padB = 16, padT = 6;
+  const yOf = (a) => padT + (h - padT - padB) * (1 - clamp((Math.log10(Math.max(a, 1e-12)) - bot) / (top - bot), 0, 1));
+  const xOf = (f) => 8 + ((f + span) / (2 * span)) * (w - 16);
+  const barW = Math.max(1, (w - 16) / (2 * span + 1) - 0.4);
+  const base = h - padB;
+  const cutoff = F.amp[S.N - 1];
+  // grid line at the cut-off amplitude
+  ctx.strokeStyle = colors.muted; ctx.globalAlpha = 0.6; ctx.setLineDash([3, 3]); ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.moveTo(8, yOf(cutoff) + 0.5); ctx.lineTo(w - 8, yOf(cutoff) + 0.5); ctx.stroke();
+  ctx.setLineDash([]); ctx.globalAlpha = 1;
+  for (let f = -span; f <= span; f++) {
+    if (f === 0) continue;
+    const r2 = F.rank[f + half];
+    const a = F.amp[r2];
+    const y = yOf(a);
+    ctx.fillStyle = r2 < S.N ? colors.bar : colors.barOff;
+    ctx.fillRect(xOf(f) - barW / 2, y, barW, base - y);
+  }
+  ctx.strokeStyle = colors.line; ctx.beginPath(); ctx.moveTo(8, base + 0.5); ctx.lineTo(w - 8, base + 0.5); ctx.stroke();
+  ctx.fillStyle = colors.muted; ctx.font = '10px "JetBrains Mono", ui-monospace, monospace'; ctx.textBaseline = 'top';
+  ctx.textAlign = 'left'; ctx.fillText(`−${span}`, 8, base + 3);
+  ctx.textAlign = 'center'; ctx.fillText('0', xOf(0), base + 3);
+  ctx.textAlign = 'right'; ctx.fillText(`+${span}`, w - 8, base + 3);
+  if (specHover !== null && specHover >= -span && specHover <= span) {
+    ctx.strokeStyle = colors.fg; ctx.globalAlpha = 0.5;
+    ctx.beginPath(); ctx.moveTo(xOf(specHover) + 0.5, padT); ctx.lineTo(xOf(specHover) + 0.5, base); ctx.stroke();
+    ctx.globalAlpha = 1;
+  }
+  cv._map = { span, w };
+}
+
+function readSpectrum(ev) {
+  const cv = $('spec');
+  if (!F || !cv._map) return;
+  const r = cv.getBoundingClientRect();
+  const { span, w } = cv._map;
+  const f = Math.round(((ev.clientX - r.left - 8) / (w - 16)) * (2 * span) - span);
+  if (f === 0 || Math.abs(f) > span) { $('specRead').textContent = 'k = 0 is the fixed centre, not a circle.'; specHover = null; updateSpectrum(); return; }
+  const rk = F.rank[f + F.M / 2];
+  const a = F.amp[rk];
+  specHover = f;
+  $('specRead').textContent = `k = ${f > 0 ? '+' : ''}${f} · radius ${a < 0.01 ? a.toExponential(1) : a.toFixed(2)} px · rank ${fmt(rk + 1)} · ${rk < S.N ? 'drawn' : 'left out'}`;
+  updateSpectrum();
+}
+
+// ----- thumbnails -----
+function drawThumbs() {
+  if (!R) return;
+  const ts = $('thumbSrc'), tl = $('thumbLines');
+  ts.width = tl.width = R.w; ts.height = tl.height = R.h;
+  const a = ts.getContext('2d');
+  a.drawImage(R.flat, 0, 0);
+  if (SUB && SUB.mask) {
+    const id = a.getImageData(0, 0, R.w, R.h);
+    const d = id.data, m = SUB.mask;
+    for (let i = 0; i < R.n; i++) if (!m[i]) {
+      d[4 * i] = d[4 * i] * 0.25 + 10; d[4 * i + 1] = d[4 * i + 1] * 0.25 + 14; d[4 * i + 2] = d[4 * i + 2] * 0.25 + 28;
+    }
+    a.putImageData(id, 0, 0);
+  }
+  const b = tl.getContext('2d');
+  b.fillStyle = colors.stage || '#000'; b.fillRect(0, 0, R.w, R.h);
+  if (!LN) return;
+  b.strokeStyle = colors.ink || '#fff';
+  b.lineWidth = Math.max(1.5, Math.max(R.w, R.h) / 110);
+  b.lineJoin = b.lineCap = 'round';
+  b.beginPath();
+  for (const s of LN.strokes) {
+    b.moveTo(s.xs[0], s.ys[0]);
+    for (let k = 1; k < s.xs.length; k++) b.lineTo(s.xs[k], s.ys[k]);
+    if (s.closed) b.closePath();
+  }
+  b.stroke();
+}
+
+// ----- sources -----
+async function loadFile(file) {
+  if (!file) return;
+  if (file.type && !file.type.startsWith('image/')) { setStatus(`<b>${escapeHtml(file.name)}</b> is not an image. Choose a JPG, PNG or WebP file.`, true); return; }
+  const url = URL.createObjectURL(file);
+  const img = new Image();
+  img.src = url;
+  try { await img.decode(); }
+  catch { setStatus(`This browser can’t read <b>${escapeHtml(file.name || 'that file')}</b>. HEIC photos often fail; export as JPG or PNG and try again.`, true); return; }
+  S.source = img; S.sourceName = file.name || 'pasted image'; S.userN = false;
+  document.querySelectorAll('[data-demo]').forEach((b) => b.setAttribute('aria-pressed', 'false'));
+  rebuild('raster');
+}
+
+const CAT_PATHS = [
+  'M 112 228 C 106 186 116 156 134 136 L 124 58 L 188 110 C 202 106 218 106 232 110 L 296 58 L 286 136 C 304 156 314 186 308 228 C 302 296 258 336 210 336 C 162 336 118 296 112 228 Z',
+  'M 142 126 L 137 88 L 170 112', 'M 278 126 L 283 88 L 250 112',
+  'M 144 206 Q 168 170 192 206 Q 168 238 144 206 Z', 'M 228 206 Q 252 170 276 206 Q 252 238 228 206 Z',
+  'M 168 199 L 168 213', 'M 252 199 L 252 213',
+  'M 199 240 Q 210 236 221 240 Q 216 248 210 251 Q 204 248 199 240 Z',
+  'M 210 252 L 210 262 C 206 272 192 276 184 268', 'M 210 262 C 214 272 228 276 236 268',
+  'M 176 250 L 96 236', 'M 176 258 L 94 266', 'M 244 250 L 324 236', 'M 244 258 L 326 266',
+];
+
+async function loadDemo(kind) {
+  const c = document.createElement('canvas');
+  const ctx = c.getContext('2d');
+  if (kind === 'cat') {
+    c.width = 420; c.height = 400;
+    ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, c.width, c.height);
+    ctx.strokeStyle = '#151515'; ctx.lineWidth = 7; ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+    for (const d of CAT_PATHS) ctx.stroke(new Path2D(d));
+  } else {
+    c.width = 900; c.height = 330;
+    try { await Promise.race([document.fonts.load('150px "Great Vibes"'), new Promise((r) => setTimeout(r, 2500))]); } catch {}
+    ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, c.width, c.height);
+    ctx.fillStyle = '#151515';
+    ctx.font = '160px "Great Vibes", "Snell Roundhand", "Brush Script MT", cursive';
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText('Fourier', c.width / 2, c.height / 2 + 8);
+  }
+  S.source = c; S.sourceName = kind; S.userN = false; S.demo = kind;
+  document.querySelectorAll('[data-demo]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.demo === kind)));
+  await rebuild('raster');
+}
+
+// ----- wiring -----
+function bindRange(id, outId, fmtFn, apply, from) {
+  const el = $(id), out = $(outId);
+  const show = () => (out.textContent = fmtFn(+el.value));
+  show();
+  el.addEventListener('input', () => { show(); apply(+el.value, false); });
+  el.addEventListener('change', () => { apply(+el.value, true); if (from) rebuild(from); });
+}
+
+function wire() {
+  $('file').addEventListener('change', (e) => { loadFile(e.target.files[0]); e.target.value = ''; });
+  document.querySelectorAll('[data-demo]').forEach((b) => b.addEventListener('click', () => loadDemo(b.dataset.demo)));
+
+  document.querySelectorAll('input[name="subject"]').forEach((r) => r.addEventListener('change', () => {
+    S.subject = r.value; $('subjectHint').textContent = SUBJECT_HINTS[S.subject]; rebuild('mask');
+  }));
+  document.querySelectorAll('input[name="style"]').forEach((r) => r.addEventListener('change', () => { S.style = r.value; rebuild('mask'); }));
+  $('optOutline').addEventListener('change', (e) => { S.outline = e.target.checked; rebuild('lines'); });
+  $('optDetails').addEventListener('change', (e) => { S.details = e.target.checked; rebuild('lines'); });
+  bindRange('detail', 'detailOut', (v) => `${v}%`, (v) => (S.detail = v / 100), 'lines');
+  bindRange('smooth', 'smoothOut', (v) => `σ ${(0.4 + v * 0.1).toFixed(1)}`, (v) => (S.smooth = 0.4 + v * 0.1), 'lines');
+  bindRange('minLen', 'minLenOut', (v) => `${v} px`, (v) => (S.minLen = v), 'lines');
+  $('res').addEventListener('change', (e) => { S.res = +e.target.value; rebuild('raster'); });
+  $('mSel').addEventListener('change', (e) => { S.mSel = e.target.value; rebuild('dft'); });
+
+  $('nSlider').addEventListener('input', (e) => setN(sliderToN(+e.target.value)));
+  $('nInput').addEventListener('change', (e) => setN(+e.target.value || 1));
+  $('presets').addEventListener('click', (e) => {
+    const b = e.target.closest('[data-n]');
+    if (!b || !F) return;
+    setN(b.dataset.n === 'all' ? F.M - 1 : +b.dataset.n);
+  });
+  bindRange('speed', 'speedOut', (v) => `${v} s`, (v) => (S.cycleSec = v));
+  bindRange('zoom', 'zoomOut', (v) => `${v}×`, (v) => { S.followZoom = v; dirty = true; });
+  bindRange('lineW', 'lineWOut', (v) => `${(v / 10).toFixed(1)} px`, (v) => { S.lineW = v / 10; dirty = true; });
+  const toggles = { optCircles: 'showCircles', optArms: 'showArms', optGhost: 'showGhost', optJumps: 'showJumps', optLoop: 'loop' };
+  for (const [id, key] of Object.entries(toggles)) $(id).addEventListener('change', (e) => { S[key] = e.target.checked; dirty = true; });
+  $('optFollow').addEventListener('change', (e) => setFollow(e.target.checked));
+
+  $('play').addEventListener('click', () => setPlaying(!S.playing));
+  $('restart').addEventListener('click', () => { holdUntil = 0; setT(0); setPlaying(true); });
+  $('followBtn').addEventListener('click', () => setFollow(!S.follow));
+  $('fit').addEventListener('click', () => { setFollow(false); fitView(false); });
+  $('scrub').addEventListener('input', (e) => { holdUntil = 0; setT(+e.target.value / 1000); updateHud(); });
+
+  // camera: wheel zoom, drag pan, double-click fit
+  view.addEventListener('wheel', (e) => {
+    if (!F) return;
+    e.preventDefault();
+    const r = view.getBoundingClientRect();
+    const mx = e.clientX - r.left - W / 2, my = e.clientY - r.top - H / 2;
+    const sc = fitScale * cam.z;
+    const wx = cam.x + mx / sc, wy = cam.y + my / sc;
+    const z = clamp(cam.z * Math.exp(-e.deltaY * 0.0015), 0.2, 200);
+    if (S.follow) { S.followZoom = clamp(z, 2, 40); $('zoom').value = Math.round(S.followZoom); $('zoomOut').textContent = `${Math.round(S.followZoom)}×`; cam.z = camT.z = z; return; }
+    const sc2 = fitScale * z;
+    cam.z = camT.z = z;
+    cam.x = camT.x = wx - mx / sc2;
+    cam.y = camT.y = wy - my / sc2;
+    dirty = true;
+  }, { passive: false });
+  let drag = null;
+  view.addEventListener('pointerdown', (e) => {
+    drag = { x: e.clientX, y: e.clientY };
+    view.setPointerCapture(e.pointerId);
+    view.classList.add('dragging');
+  });
+  view.addEventListener('pointermove', (e) => {
+    if (!drag) return;
+    const dx = e.clientX - drag.x, dy = e.clientY - drag.y;
+    if (S.follow && Math.hypot(dx, dy) > 4) setFollow(false);
+    drag = { x: e.clientX, y: e.clientY };
+    const sc = fitScale * cam.z;
+    cam.x = camT.x = cam.x - dx / sc;
+    cam.y = camT.y = cam.y - dy / sc;
+    dirty = true;
+  });
+  const endDrag = () => { drag = null; view.classList.remove('dragging'); };
+  view.addEventListener('pointerup', endDrag);
+  view.addEventListener('pointercancel', endDrag);
+  view.addEventListener('dblclick', () => { setFollow(false); fitView(false); });
+
+  $('spec').addEventListener('pointermove', readSpectrum);
+  $('spec').addEventListener('pointerleave', () => { specHover = null; updateSpectrum(); });
+
+  // drag & drop and paste anywhere
+  let dragDepth = 0;
+  window.addEventListener('dragenter', (e) => { if ([...(e.dataTransfer?.types || [])].includes('Files')) { dragDepth++; $('dropveil').hidden = false; } });
+  window.addEventListener('dragleave', () => { dragDepth = Math.max(0, dragDepth - 1); if (!dragDepth) $('dropveil').hidden = true; });
+  window.addEventListener('dragover', (e) => e.preventDefault());
+  window.addEventListener('drop', (e) => {
+    e.preventDefault(); dragDepth = 0; $('dropveil').hidden = true;
+    const f = [...(e.dataTransfer?.files || [])].find((x) => x.type.startsWith('image/'));
+    if (f) loadFile(f);
+  });
+  window.addEventListener('paste', (e) => {
+    const item = [...(e.clipboardData?.items || [])].find((i) => i.type.startsWith('image/'));
+    if (item) loadFile(item.getAsFile());
+  });
+
+  window.addEventListener('keydown', (e) => {
+    if (e.target.closest('input, select, textarea') && e.target.type !== 'range' && e.target.type !== 'checkbox' && e.target.type !== 'radio') return;
+    if (e.key === ' ' && !e.target.closest('button')) { e.preventDefault(); setPlaying(!S.playing); }
+    else if (e.key === 'ArrowUp' && !e.target.closest('input')) { e.preventDefault(); setN(Math.max(S.N + 1, S.N * 1.25)); }
+    else if (e.key === 'ArrowDown' && !e.target.closest('input')) { e.preventDefault(); setN(Math.min(S.N - 1, S.N / 1.25)); }
+    else if (e.key === 'r' || e.key === 'R') { holdUntil = 0; setT(0); setPlaying(true); }
+    else if (e.key === 'f' || e.key === 'F') setFollow(!S.follow);
+  });
+
+  new ResizeObserver(resize).observe($('stage'));
+  matchMedia('(prefers-color-scheme: dark)').addEventListener('change', readColors);
+  new MutationObserver(readColors).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme', 'class', 'style'] });
+}
+
+// ----- boot -----
+$('subjectHint').textContent = SUBJECT_HINTS.auto;
+resetTrail();
+readColors();
+wire();
+resize();
+setPlaying(S.playing);
+requestAnimationFrame(tick);
+loadDemo('cat');
+window.__epicycles = { S, get F() { return F; }, get LN() { return LN; }, get SUB() { return SUB; }, get R() { return R; }, setN, loadFile };
+</script>
+</body>
+</html>
