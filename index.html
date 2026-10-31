@@ -285,15 +285,23 @@ kbd {
 }
 .hud .hud-n { font: 400 22px/1.1 var(--display); color: var(--fg); }
 .hud .hud-n small { font: 12px var(--mono); color: var(--muted); }
-.tip-hint {
+.corner {
   position: absolute;
-  top: 14px;
+  top: 12px;
   right: max(16px, env(safe-area-inset-right, 0px));
-  font-size: 12px;
-  color: var(--muted);
-  pointer-events: none;
+  display: grid;
+  justify-items: end;
+  gap: 3px;
   text-align: right;
+  pointer-events: none;
 }
+.credit {
+  margin: 0;
+  font: italic 400 16px/1.25 var(--display);
+  color: var(--fg);
+  text-wrap: balance;
+}
+.tip-hint { margin: 0; font-size: 12px; color: var(--muted); }
 .busy {
   position: absolute;
   left: 50%;
@@ -378,6 +386,9 @@ kbd {
   .hud { left: max(16px, env(safe-area-inset-left, 0px)); }
   .transport { left: max(16px, env(safe-area-inset-left, 0px)); }
   .tip-hint { display: none; }
+  .corner { top: 14px; }
+  .credit { font-size: 14px; max-width: 9.5em; }
+  #hudLine2 { display: none; }
   #fit { display: none; }
   .transport { gap: 4px; padding: 6px; }
   .tbtn { padding: 0 8px; }
@@ -557,7 +568,10 @@ kbd {
       <div id="hudLine1"></div>
       <div id="hudLine2"></div>
     </div>
-    <div class="tip-hint">Scroll to zoom · drag to pan · double-click to fit</div>
+    <div class="corner">
+      <p class="credit">Created by Sayan, hope you feel better</p>
+      <p class="tip-hint">Scroll to zoom · drag to pan · double-click to fit</p>
+    </div>
     <div class="busy" id="busy" hidden><span id="busyText">Working…</span></div>
     <div class="transport">
       <button class="tbtn primary" id="play" type="button" aria-label="Pause">
