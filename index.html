@@ -406,12 +406,15 @@ kbd {
       <legend>Lines</legend>
       <div class="seg" role="radiogroup" aria-label="Line style">
         <label><input type="radio" name="style" id="styAuto" value="auto" checked><span>Auto</span></label>
-        <label><input type="radio" name="style" id="styEdges" value="edges"><span>Edges (photos)</span></label>
+        <label><input type="radio" name="style" id="stySketch" value="sketch"><span>Sketch (people)</span></label>
+        <label><input type="radio" name="style" id="styEdges" value="edges"><span>Edges</span></label>
         <label><input type="radio" name="style" id="styCenter" value="center"><span>Centerline (ink)</span></label>
       </div>
+      <p class="hint" id="styleHint"></p>
       <div class="checks">
-        <label class="check"><input type="checkbox" id="optOutline" checked> Subject outline</label>
+        <label class="check"><input type="checkbox" id="optOutline" checked> Outlines</label>
         <label class="check"><input type="checkbox" id="optDetails" checked> Inner details</label>
+        <label class="check"><input type="checkbox" id="optFace" checked> Face features</label>
       </div>
       <div class="row">
         <div class="row-head"><label for="detail">Detail</label><output id="detailOut" for="detail"></output></div>
@@ -546,7 +549,7 @@ const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
 const S = {
   source: null, sourceName: '', demo: null,
   subject: 'auto', style: 'auto',
-  outline: true, details: true,
+  outline: true, details: true, faceFeatures: true,
   detail: 0.45, smooth: 1.4, minLen: 12, res: 512,
   mSel: 'auto', N: 250, userN: false,
   playing: !reduceMotion, cycleSec: 24, t: 0, loop: true,
@@ -597,7 +600,7 @@ function rasterize(src, res, crop = null) {
   const bl = new Float32Array(border.length);
   border.forEach((i, k) => (bl[k] = gray[i]));
   bl.sort();
-  return { w, h, n, flat, frgb, gray, alpha, hasAlpha: transparent > n * 0.02, bgLum: bl[bl.length >> 1], border, seg: {}, lineArt: null, crop, srcW: iw, srcH: ih };
+  return { w, h, n, flat, frgb, gray, alpha, hasAlpha: transparent > n * 0.02, bgLum: bl[bl.length >> 1], border, seg: {}, lineArt: null, crop, rect: c, srcW: iw, srcH: ih };
 }
 
 function borderIndices(w, h, band) {
@@ -659,8 +662,22 @@ function detectLineArt() {
 // =====================================================================
 //  2. Subject mask (MediaPipe segmentation, transparency, or flat background)
 // =====================================================================
-const AI = { mod: null, segs: {}, error: null, labels: null };
+const AI = { mod: null, tasks: {}, errors: {}, labels: null, faceSets: null };
 const SCENERY = new Set([9, 11, 16, 18, 20]); // chair, dining table, potted plant, sofa, tv
+const MODEL_FILES = {
+  person: 'selfie_segmenter.tflite',
+  parts: 'selfie_multiclass_256x256.tflite',
+  object: 'deeplab_v3.tflite',
+  face: 'face_landmarker.task',
+};
+const BUSY_TEXT = {
+  person: 'Loading the person model…',
+  parts: 'Loading the body-parts model (16 MB, first use only)…',
+  object: 'Loading the object model…',
+  face: 'Loading the face-landmark model…',
+};
+// labels of the body-parts model
+const PART = { bg: 0, hair: 1, skin: 2, face: 3, clothes: 4, other: 5 };
 
 async function importVision() {
   if (AI.mod) return AI.mod;
@@ -675,65 +692,96 @@ async function importVision() {
   return AI.mod;
 }
 
-// A .tflite file carries "TFL3" at byte 4.
-const isTflite = (b) => b.length > 8 && b[4] === 0x54 && b[5] === 0x46 && b[6] === 0x4c && b[7] === 0x33;
+// .tflite files carry "TFL3" at byte 4; .task bundles are zip files ("PK\x03\x04" near the start)
+function looksLikeModel(b, file) {
+  if (b.length < 16) return false;
+  if (!file.endsWith('.task')) return b[4] === 0x54 && b[5] === 0x46 && b[6] === 0x4c && b[7] === 0x33;
+  for (let i = 0; i < 8; i++) if (b[i] === 0x50 && b[i + 1] === 0x4b && b[i + 2] === 0x03 && b[i + 3] === 0x04) return true;
+  return false;
+}
 
-// Loads vendor/models/<name>.tflite, or a base64 copy (<name>.tflite.b64.txt) for hosts that
-// refuse to serve binary model files.
-async function loadModelBytes(name, base) {
-  try {
-    const r = await fetch(new URL(`models/${name}.tflite`, base));
-    if (r.ok) {
-      const b = new Uint8Array(await r.arrayBuffer());
-      if (isTflite(b)) return b;
+// Loads vendor/models/<file>. Hosts that refuse binary files can serve a base64 copy instead:
+// <file>.b64.txt, or numbered parts <file>.b64.0.txt, <file>.b64.1.txt, …
+async function loadModelBytes(file, base) {
+  const get = async (name) => {
+    try { const r = await fetch(new URL(`models/${name}`, base)); return r.ok ? r : null; } catch { return null; }
+  };
+  const direct = await get(file);
+  if (direct) {
+    const b = new Uint8Array(await direct.arrayBuffer());
+    if (looksLikeModel(b, file)) return b;
+  }
+  let txt = '';
+  const one = await get(`${file}.b64.txt`);
+  if (one) txt = await one.text();
+  else {
+    for (let k = 0; k < 64; k++) {
+      const part = await get(`${file}.b64.${k}.txt`);
+      if (!part) break;
+      const t = await part.text();
+      if (t.trimStart().startsWith('<')) break;
+      txt += t.trim();
     }
-  } catch {}
-  const r = await fetch(new URL(`models/${name}.tflite.b64.txt`, base));
-  if (!r.ok) throw new Error(`Model file for ${name} is missing. Run fetch-vendor.sh.`);
-  const bin = atob((await r.text()).trim());
+  }
+  if (!txt || txt.trimStart().startsWith('<')) throw new Error(`Model file ${file} is missing. Run fetch-vendor.sh.`);
+  const bin = atob(txt.replace(/\s+/g, ''));
   const b = new Uint8Array(bin.length);
   for (let i = 0; i < bin.length; i++) b[i] = bin.charCodeAt(i);
-  if (!isTflite(b)) throw new Error(`Model file for ${name} is not a TFLite model.`);
+  if (!looksLikeModel(b, file)) throw new Error(`${file} is not a valid model file.`);
   return b;
 }
 
-async function getSegmenter(kind) {
-  if (AI.segs[kind]) return AI.segs[kind];
-  if (AI.error) throw AI.error;
+async function getTask(kind) {
+  if (AI.tasks[kind]) return AI.tasks[kind];
+  if (AI.errors[kind]) throw AI.errors[kind];
   try {
-    setBusy(kind === 'person' ? 'Loading person model (first use only)…' : 'Loading object model (first use only)…');
+    setBusy(BUSY_TEXT[kind]);
     const vision = await importVision();
     const base = new URL('vendor/', document.baseURI);
     const fileset = {
       wasmLoaderPath: new URL('wasm/vision_wasm_internal.js', base).href,
       wasmBinaryPath: new URL('wasm/vision_wasm_internal.wasm', base).href,
     };
-    const model = await loadModelBytes(kind === 'person' ? 'selfie_segmenter' : 'deeplab_v3', base);
-    const seg = await vision.ImageSegmenter.createFromOptions(fileset, {
-      baseOptions: { modelAssetBuffer: model, delegate: 'CPU' },
-      runningMode: 'IMAGE',
-      outputCategoryMask: kind === 'object',
-      outputConfidenceMasks: kind === 'person',
-    });
-    if (kind === 'object') AI.labels = seg.getLabels();
-    AI.segs[kind] = seg;
-    return seg;
+    const model = await loadModelBytes(MODEL_FILES[kind], base);
+    let task;
+    if (kind === 'face') {
+      const FL = vision.FaceLandmarker;
+      task = await FL.createFromOptions(fileset, {
+        baseOptions: { modelAssetBuffer: model, delegate: 'CPU' },
+        runningMode: 'IMAGE', numFaces: 4, minFaceDetectionConfidence: 0.4, minFacePresenceConfidence: 0.4,
+      });
+      AI.faceSets = {
+        LEFT_EYE: FL.FACE_LANDMARKS_LEFT_EYE, RIGHT_EYE: FL.FACE_LANDMARKS_RIGHT_EYE,
+        LEFT_EYEBROW: FL.FACE_LANDMARKS_LEFT_EYEBROW, RIGHT_EYEBROW: FL.FACE_LANDMARKS_RIGHT_EYEBROW,
+        LEFT_IRIS: FL.FACE_LANDMARKS_LEFT_IRIS, RIGHT_IRIS: FL.FACE_LANDMARKS_RIGHT_IRIS,
+        LIPS: FL.FACE_LANDMARKS_LIPS, FACE_OVAL: FL.FACE_LANDMARKS_FACE_OVAL,
+      };
+    } else {
+      task = await vision.ImageSegmenter.createFromOptions(fileset, {
+        baseOptions: { modelAssetBuffer: model, delegate: 'CPU' },
+        runningMode: 'IMAGE',
+        outputCategoryMask: kind === 'object',
+        outputConfidenceMasks: kind !== 'object',
+      });
+      if (kind === 'object') AI.labels = task.getLabels();
+    }
+    AI.tasks[kind] = task;
+    return task;
   } catch (e) {
-    AI.error = e;
-    console.warn('Segmentation unavailable:', e);
+    AI.errors[kind] = e;
+    console.warn(`The ${kind} model is unavailable:`, e);
     throw e;
   }
 }
 
 async function segmentPerson() {
   if (R.seg.person) return R.seg.person;
-  const seg = await getSegmenter('person');
+  const seg = await getTask('person');
   setBusy('Finding the person…');
   await nextFrame();
   let mask = null;
   seg.segment(R.flat, (res) => {
-    const m = res.confidenceMasks[0];
-    const a = m.getAsFloat32Array();
+    const a = res.confidenceMasks[0].getAsFloat32Array();
     mask = new Uint8Array(R.n);
     for (let i = 0; i < R.n; i++) mask[i] = a[i] > 0.5 ? 1 : 0;
   });
@@ -741,9 +789,117 @@ async function segmentPerson() {
   return mask;
 }
 
+// hair / body skin / face skin / clothes / other, smoothed so region borders are clean curves
+async function segmentParts() {
+  if (R.seg.parts) return R.seg.parts;
+  const seg = await getTask('parts');
+  setBusy('Finding hair, face, skin and clothes…');
+  await nextFrame();
+  let conf = null;
+  seg.segment(R.flat, (res) => { conf = res.confidenceMasks.map((m) => m.getAsFloat32Array().slice()); });
+  const r = Math.max(1, Math.round(Math.max(R.w, R.h) / 200));
+  const sm = conf.map((c) => boxBlur(c, R.w, R.h, r));
+  const labels = new Uint8Array(R.n);
+  for (let i = 0; i < R.n; i++) {
+    let best = 0, bv = sm[0][i];
+    for (let k = 1; k < sm.length; k++) if (sm[k][i] > bv) { bv = sm[k][i]; best = k; }
+    labels[i] = best;
+  }
+  R.seg.parts = labels;
+  return labels;
+}
+
+function personFromParts(labels) {
+  const { w, h, n } = R;
+  const fg = new Uint8Array(n);
+  for (let i = 0; i < n; i++) fg[i] = labels[i] ? 1 : 0;
+  const mask = cleanMask(fg, w, h);
+  if (!mask) return null;
+  const L = new Uint8Array(n);
+  let cov = 0;
+  for (let i = 0; i < n; i++) { L[i] = mask[i] ? labels[i] : 0; cov += mask[i]; }
+  // pixels the clean-up added take the label of a labelled neighbour
+  for (let pass = 0; pass < 8; pass++) {
+    let left = 0;
+    for (let i = 0; i < n; i++) {
+      if (!mask[i] || L[i]) continue;
+      const x = i % w;
+      const nb = (x > 0 && L[i - 1]) || (x < w - 1 && L[i + 1]) || (i >= w && L[i - w]) || (i + w < n && L[i + w]);
+      if (nb) L[i] = nb; else left++;
+    }
+    if (!left) break;
+  }
+  for (let i = 0; i < n; i++) if (mask[i] && !L[i]) L[i] = PART.clothes;
+  return { mask, parts: L, coverage: cov / n };
+}
+
+async function personSubject() {
+  try {
+    const p = personFromParts(await segmentParts());
+    if (p && p.coverage > 0.005) return { mask: p.mask, parts: p.parts, kind: 'person', label: 'Person (AI body-part segmentation)' };
+  } catch (e) { /* fall back to the plain person model */ }
+  const m = await segmentPerson();
+  return { mask: cleanMask(m, R.w, R.h), kind: 'person', label: 'Person (AI segmentation)' };
+}
+
+// ---------- faces ----------
+// landmark coordinates come back in raster pixels: [[x, y], …] (478 points per face)
+async function detectFaces(parts) {
+  const fl = await getTask('face');
+  setBusy('Finding eyes, nose and mouth…');
+  await nextFrame();
+  const { w, h, n } = R;
+  const faces = [];
+  const isDup = (lm) => faces.some((f) => Math.hypot(f[1][0] - lm[1][0], f[1][1] - lm[1][1]) < 0.25 * Math.hypot(f[234][0] - f[454][0], f[234][1] - f[454][1]));
+  if (parts) {
+    // look closely at each face-skin region: small faces are found far more reliably this way
+    const fm = new Uint8Array(n);
+    for (let i = 0; i < n; i++) fm[i] = parts[i] === PART.face ? 1 : 0;
+    const cc = components(fm, w, h, 1);
+    const boxes = cc.areas.map(() => ({ x0: w, y0: h, x1: -1, y1: -1 }));
+    for (let i = 0; i < n; i++) {
+      const l = cc.lab[i];
+      if (l < 0) continue;
+      const b = boxes[l], x = i % w, y = (i / w) | 0;
+      if (x < b.x0) b.x0 = x; if (x > b.x1) b.x1 = x; if (y < b.y0) b.y0 = y; if (y > b.y1) b.y1 = y;
+    }
+    const order = cc.areas.map((_, k) => k).filter((k) => cc.areas[k] > Math.max(40, 0.0006 * n)).sort((a, b) => cc.areas[b] - cc.areas[a]).slice(0, 4);
+    for (const k of order) {
+      const b = boxes[k];
+      const side = 1.9 * Math.max(b.x1 - b.x0, b.y1 - b.y0) + 8;
+      const lm = detectInRegion(fl, (b.x0 + b.x1) / 2 - side / 2, (b.y0 + b.y1) / 2 - side / 2, side);
+      if (lm && !isDup(lm)) faces.push(lm);
+    }
+  }
+  if (!faces.length) {
+    const res = fl.detect(R.flat);
+    for (const lm of res.faceLandmarks) faces.push(lm.map((p) => [p.x * w, p.y * h]));
+  }
+  return faces;
+}
+
+function detectInRegion(fl, fx, fy, fs) {
+  const size = 384;
+  const c = document.createElement('canvas');
+  c.width = c.height = size;
+  const ctx = c.getContext('2d');
+  ctx.fillStyle = '#fff';
+  ctx.fillRect(0, 0, size, size);
+  const k = R.rect.w / R.w; // source pixels per raster pixel
+  ctx.drawImage(S.source, R.rect.x + fx * k, R.rect.y + fy * k, fs * k, fs * k, 0, 0, size, size);
+  const res = fl.detect(c);
+  if (!res.faceLandmarks.length) return null;
+  let best = null, bd = Infinity;
+  for (const lm of res.faceLandmarks) {
+    const d = Math.hypot(lm[1].x - 0.5, lm[1].y - 0.5);
+    if (d < bd) { bd = d; best = lm; }
+  }
+  return best.map((p) => [fx + p.x * fs, fy + p.y * fs]);
+}
+
 async function segmentObjects() {
   if (R.seg.objects) return R.seg.objects;
-  const seg = await getSegmenter('object');
+  const seg = await getTask('object');
   setBusy('Finding the main object…');
   await nextFrame();
   let cats = null;
@@ -884,10 +1040,7 @@ async function computeSubject(style) {
   }
 
   try {
-    if (mode === 'person') {
-      const m = await segmentPerson();
-      return { mask: cleanMask(m, R.w, R.h), label: 'Person (AI segmentation)' };
-    }
+    if (mode === 'person') return await personSubject();
     if (mode === 'object') {
       const o = objectMask(await segmentObjects());
       if (!o) return { mask: null, label: 'Whole image', note: 'No known object found.' };
@@ -899,9 +1052,8 @@ async function computeSubject(style) {
     for (let c = 1; c < 21; c++) if (!SCENERY.has(c)) fgA += objs.areas[c];
     const personA = objs.areas[15];
     if (personA > 0.004 * R.n && personA >= 0.5 * fgA) {
-      const m = await segmentPerson();
-      let cov = 0; for (let i = 0; i < R.n; i++) cov += m[i];
-      if (cov > 0.01 * R.n) return { mask: cleanMask(m, R.w, R.h), label: 'Person (AI segmentation)' };
+      const p = await personSubject();
+      if (p.mask) return p;
     }
     const o = objectMask(objs);
     if (o && o.coverage > 0.015) return { mask: cleanMask(o.mask, R.w, R.h), label: `Object (AI guess: ${o.names.join(' + ')})` };
@@ -1178,6 +1330,220 @@ function smoothStroke(s, r = 2) {
   return { xs, ys, closed: s.closed };
 }
 
+// ---------- turning jagged pixel chains into calm, hand-drawn curves ----------
+function rdpKeep(xs, ys, eps) {
+  const m = xs.length, keep = new Uint8Array(m);
+  keep[0] = keep[m - 1] = 1;
+  const stack = [[0, m - 1]];
+  while (stack.length) {
+    const [a, b] = stack.pop();
+    const dx = xs[b] - xs[a], dy = ys[b] - ys[a], len = Math.hypot(dx, dy);
+    let maxD = -1, idx = -1;
+    for (let k = a + 1; k < b; k++) {
+      const d = len < 1e-6 ? Math.hypot(xs[k] - xs[a], ys[k] - ys[a]) : Math.abs(dy * (xs[k] - xs[a]) - dx * (ys[k] - ys[a])) / len;
+      if (d > maxD) { maxD = d; idx = k; }
+    }
+    if (maxD > eps) { keep[idx] = 1; stack.push([a, idx], [idx, b]); }
+  }
+  return keep;
+}
+
+function chaikin(xs, ys, closed, iters) {
+  for (let it = 0; it < iters; it++) {
+    const m = xs.length, nx = [], ny = [];
+    if (!closed) { nx.push(xs[0]); ny.push(ys[0]); }
+    const segs = closed ? m : m - 1;
+    for (let i = 0; i < segs; i++) {
+      const j = (i + 1) % m;
+      nx.push(0.75 * xs[i] + 0.25 * xs[j], 0.25 * xs[i] + 0.75 * xs[j]);
+      ny.push(0.75 * ys[i] + 0.25 * ys[j], 0.25 * ys[i] + 0.75 * ys[j]);
+    }
+    if (!closed) { nx.push(xs[m - 1]); ny.push(ys[m - 1]); }
+    xs = nx; ys = ny;
+  }
+  return [xs, ys];
+}
+
+// light averaging, then simplify (drops pixel stair-steps), then corner-cutting
+function cleanStroke(s, scale) {
+  const sm = smoothStroke(s, 2);
+  const xs = Array.from(sm.xs), ys = Array.from(sm.ys);
+  if (s.closed) { xs.push(xs[0]); ys.push(ys[0]); }
+  const keep = rdpKeep(xs, ys, 0.6 * Math.max(1, scale));
+  let px = [], py = [];
+  for (let k = 0; k < xs.length; k++) if (keep[k]) { px.push(xs[k]); py.push(ys[k]); }
+  let closed = s.closed;
+  if (closed) { px.pop(); py.pop(); if (px.length < 3) closed = false; }
+  if (px.length < 2) return sm;
+  [px, py] = chaikin(px, py, closed, 3);
+  return { xs: Float32Array.from(px), ys: Float32Array.from(py), closed };
+}
+
+// ---------- face features from landmarks ----------
+const NOSE_BOTTOM = [48, 64, 98, 97, 2, 326, 327, 294, 278];
+const dist2 = (a, b) => Math.hypot(a[0] - b[0], a[1] - b[1]);
+const toStroke = (pts, closed) => ({ xs: Float32Array.from(pts, (p) => p[0]), ys: Float32Array.from(pts, (p) => p[1]), closed });
+
+function catmullRom(pts, closed, per = 6) {
+  const m = pts.length;
+  if (m < 3) return pts.slice();
+  const P = (k) => (closed ? pts[((k % m) + m) % m] : pts[clamp(k, 0, m - 1)]);
+  const out = [];
+  const segs = closed ? m : m - 1;
+  for (let i = 0; i < segs; i++) {
+    const p0 = P(i - 1), p1 = P(i), p2 = P(i + 1), p3 = P(i + 2);
+    for (let s = 0; s < per; s++) {
+      const t = s / per, t2 = t * t, t3 = t2 * t;
+      const f = (a, b, c, d) => 0.5 * (2 * b + (-a + c) * t + (2 * a - 5 * b + 4 * c - d) * t2 + (-a + 3 * b - 3 * c + d) * t3);
+      out.push([f(p0[0], p1[0], p2[0], p3[0]), f(p0[1], p1[1], p2[1], p3[1])]);
+    }
+  }
+  if (!closed) out.push(pts[m - 1]);
+  return out;
+}
+
+// MediaPipe gives features as unordered {start, end} pairs; chain them into polylines
+function chainConnections(conns) {
+  const adj = new Map();
+  const link = (a, b) => { if (!adj.has(a)) adj.set(a, []); adj.get(a).push(b); };
+  for (const { start, end } of conns) { link(start, end); link(end, start); }
+  const used = new Set();
+  const key = (a, b) => (a < b ? `${a}-${b}` : `${b}-${a}`);
+  const free = (v) => adj.get(v).some((u) => !used.has(key(v, u)));
+  const walk = (s) => {
+    const p = [s];
+    let cur = s;
+    for (;;) {
+      const nx = adj.get(cur).find((u) => !used.has(key(cur, u)));
+      if (nx === undefined) break;
+      used.add(key(cur, nx)); p.push(nx); cur = nx;
+    }
+    return p;
+  };
+  const paths = [];
+  for (const [v, nb] of adj) if (nb.length === 1 && free(v)) paths.push(walk(v));
+  for (const v of adj.keys()) while (free(v)) paths.push(walk(v));
+  return paths.map((p) => {
+    const closed = p.length > 3 && p[0] === p[p.length - 1];
+    return { idx: closed ? p.slice(0, -1) : p, closed };
+  });
+}
+
+const polyArea = (pts) => {
+  let a = 0;
+  for (let i = 0; i < pts.length; i++) { const p = pts[i], q = pts[(i + 1) % pts.length]; a += p[0] * q[1] - q[0] * p[1]; }
+  return Math.abs(a) / 2;
+};
+function insidePoly(x, y, poly) {
+  let inside = false;
+  for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+    const [xi, yi] = poly[i], [xj, yj] = poly[j];
+    if ((yi > y) !== (yj > y) && x < ((xj - xi) * (y - yi)) / (yj - yi) + xi) inside = !inside;
+  }
+  return inside;
+}
+
+// a circle, keeping only the arcs that are visible between the eyelids
+function clippedCircle(cx, cy, r, poly) {
+  const K = 72, pts = [], ins = [];
+  for (let k = 0; k < K; k++) {
+    const a = (2 * Math.PI * k) / K;
+    pts.push([cx + r * Math.cos(a), cy + r * Math.sin(a)]);
+    ins.push(insidePoly(pts[k][0], pts[k][1], poly));
+  }
+  if (ins.every(Boolean)) return [toStroke(pts, true)];
+  const start = ins.findIndex((v) => !v);
+  const out = [];
+  let run = [];
+  for (let q = 1; q <= K; q++) {
+    const k = (start + q) % K;
+    if (ins[k]) run.push(pts[k]);
+    else { if (run.length >= 3) out.push(toStroke(run, false)); run = []; }
+  }
+  if (run.length >= 3) out.push(toStroke(run, false));
+  return out;
+}
+
+function faceStrokes(lm) {
+  const F = AI.faceSets;
+  const P = (i) => lm[i];
+  const out = [];
+  const add = (idx, closed) => out.push(toStroke(catmullRom(idx.map(P), closed), closed));
+  for (const side of ['LEFT', 'RIGHT']) {
+    // eye: upper and lower lid as one almond shape
+    const eye = chainConnections(F[`${side}_EYE`]);
+    eye.forEach((c) => add(c.idx, c.closed));
+    const loop = eye.find((c) => c.closed);
+    // brow: upper and lower edge joined into one outline
+    const brow = chainConnections(F[`${side}_EYEBROW`]);
+    if (brow.length === 2) {
+      const a = brow[0].idx;
+      let b = brow[1].idx;
+      const end = P(a[a.length - 1]);
+      if (dist2(end, P(b[0])) > dist2(end, P(b[b.length - 1]))) b = b.slice().reverse();
+      add(a.concat(b), true);
+    } else brow.forEach((c) => add(c.idx, c.closed));
+    // iris and pupil, hidden behind the lids
+    if (loop) {
+      const poly = catmullRom(loop.idx.map(P), true);
+      const ring = F[`${side}_IRIS`].map((c) => P(c.start));
+      const cx = ring.reduce((s, p) => s + p[0], 0) / ring.length;
+      const cy = ring.reduce((s, p) => s + p[1], 0) / ring.length;
+      const r = ring.reduce((s, p) => s + Math.hypot(p[0] - cx, p[1] - cy), 0) / ring.length;
+      if (r > 1) {
+        out.push(...clippedCircle(cx, cy, r, poly));
+        if (r * 0.42 > 1.2) out.push(...clippedCircle(cx, cy, r * 0.42, poly));
+      }
+    }
+  }
+  // lips: outer outline, plus the mouth opening (or just the line between the lips when closed)
+  const lips = chainConnections(F.LIPS).filter((c) => c.closed)
+    .map((c) => ({ ...c, area: polyArea(c.idx.map(P)) })).sort((a, b) => b.area - a.area);
+  if (lips[0]) add(lips[0].idx, true);
+  if (lips[1]) {
+    const inner = lips[1];
+    if (inner.area > 0.1 * lips[0].area) add(inner.idx, true);
+    else {
+      const xs = inner.idx.map((i) => P(i)[0]);
+      const a = xs.indexOf(Math.min(...xs)), b = xs.indexOf(Math.max(...xs));
+      const m = inner.idx.length;
+      const arc = (from, to) => { const r = []; for (let k = from; ; k = (k + 1) % m) { r.push(inner.idx[k]); if (k === to) break; } return r; };
+      const h1 = arc(a, b), h2 = arc(b, a);
+      const meanY = (arr) => arr.reduce((s, i) => s + P(i)[1], 0) / arr.length;
+      add(meanY(h1) < meanY(h2) ? h1 : h2, false);
+    }
+  }
+  // nose: the wings and the underside, the way it is usually sketched
+  add(NOSE_BOTTOM, false);
+  return out;
+}
+
+// inside of each face (a shrunk face oval): drawn from landmarks, so skip pixel lines there
+function faceInterior(faces, w, h, k) {
+  const c = document.createElement('canvas');
+  c.width = w; c.height = h;
+  const ctx = c.getContext('2d', { willReadFrequently: true });
+  ctx.fillStyle = '#000';
+  const oval = chainConnections(AI.faceSets.FACE_OVAL).find((o) => o.closed);
+  if (!oval) return null;
+  for (const lm of faces) {
+    const pts = oval.idx.map((i) => lm[i]);
+    const cx = pts.reduce((s, p) => s + p[0], 0) / pts.length;
+    const cy = pts.reduce((s, p) => s + p[1], 0) / pts.length;
+    ctx.beginPath();
+    pts.forEach((p, j) => {
+      const x = cx + (p[0] - cx) * k, y = cy + (p[1] - cy) * k;
+      if (j) ctx.lineTo(x, y); else ctx.moveTo(x, y);
+    });
+    ctx.closePath();
+    ctx.fill();
+  }
+  const d = ctx.getImageData(0, 0, w, h).data;
+  const m = new Uint8Array(w * h);
+  for (let i = 0; i < w * h; i++) m[i] = d[4 * i + 3] > 127 ? 1 : 0;
+  return m;
+}
+
 // =====================================================================
 //  5. Order strokes into one tour (greedy nearest neighbour + 2-opt)
 // =====================================================================
@@ -1283,7 +1649,7 @@ function assemblePath(strokes, seq) {
   return { xs, ys, pen };
 }
 
-function resample(path, M, jumpWeight = 0.4) {
+function resample(path, M, jumpWeight = 1) {
   const { xs, ys, pen } = path;
   const n = xs.length;
   const seg = new Float64Array(n);
@@ -1363,9 +1729,9 @@ function rmsError(N) {
   const tot = F.cum[F.cum.length - 1];
   return Math.sqrt(Math.max(0, tot - F.cum[N]));
 }
-// smallest N whose average error is under ~0.8 px of the working image
+// smallest N whose average error is under ~0.3 px of the working image (small eyes stay crisp)
 function defaultN() {
-  for (let N = 1; N < F.M; N++) if (rmsError(N) < 0.8) return Math.min(F.M - 1, Math.max(N, 60));
+  for (let N = 1; N < F.M; N++) if (rmsError(N) < 0.3) return Math.min(F.M - 1, Math.max(N, 60));
   return F.M - 1;
 }
 
@@ -1427,27 +1793,34 @@ async function rebuild(from) {
 
     const keepR = R;
     R = R0;
-    const style = S.style === 'auto' ? (detectLineArt() ? 'center' : 'edges') : S.style;
+    // 'photo' = decide between sketch and edges once we know whether this is a person
+    const base = S.style === 'auto' ? (detectLineArt() ? 'center' : 'photo') : S.style;
     R = keepR;
 
-    if (lv <= 1 || !SUB || SUB.style !== style) {
+    if (lv <= 1 || !SUB || SUB.base !== base) {
       R = R0;
-      SUB = await computeSubject(style);
+      SUB = await computeSubject(base);
       if (stale()) return;
       // zoom in on the subject so small figures get the full working resolution
-      const crop = contentCrop(style);
+      const crop = contentCrop(base);
       if (crop) {
         setBusy('Zooming in on the subject…');
         await nextFrame();
         R = rasterize(S.source, S.res, crop);
         R.lineArt = R0.lineArt;
-        const sub2 = await computeSubject(style);
+        const sub2 = await computeSubject(base);
         if (stale()) return;
         if (sub2.mask || !SUB.mask) { SUB = sub2; SUB.cropped = true; }
         else R = R0;
       }
-      SUB.style = style;
+      SUB.base = base;
+      SUB.faces = [];
+      if (SUB.kind === 'person' && base !== 'center' && base !== 'edges') {
+        try { SUB.faces = await detectFaces(SUB.parts); } catch (e) { SUB.faceError = true; }
+        if (stale()) return;
+      }
     }
+    const style = base === 'photo' ? (SUB.kind === 'person' ? 'sketch' : 'edges') : base === 'sketch' && SUB.kind !== 'person' ? 'edges' : base;
     R.styleUsed = style;
 
     if (lv <= 2 || !LN) {
@@ -1469,8 +1842,13 @@ async function rebuild(from) {
     setBusy('Taking the Fourier transform…');
     await nextFrame();
     const path = assemblePath(LN.strokes, LN.seq);
-    const totalInk = path.xs.length;
-    const M = S.mSel === 'auto' ? clamp(nextPow2(totalInk / 2.2), 1024, 8192) : +S.mSel;
+    let pathLen = 0;
+    for (let i = 0; i < path.xs.length; i++) {
+      const j = (i + 1) % path.xs.length;
+      pathLen += Math.hypot(path.xs[j] - path.xs[i], path.ys[j] - path.ys[i]);
+    }
+    // about one sample per 1.5 px of path (pen lifts included)
+    const M = S.mSel === 'auto' ? clamp(nextPow2(pathLen / 1.5), 1024, 8192) : +S.mSel;
     const smp = resample(path, M);
     // center on the drawing's bounding box
     let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
@@ -1508,18 +1886,64 @@ function extractLines(style) {
   const { w, h, n } = R;
   const region = SUB.mask;
   const scale = Math.max(w, h) / 512;
-  let E;
+  const minLen = Math.max(2, S.minLen * scale);
+  const layers = [];   // [binary skeleton, minimum stroke length]
+  const vectors = [];  // strokes that are already clean curves (face features)
   if (style === 'center') {
     const v = inkValues();
     const base = Math.max(0.1, otsu(v));
     const thr = clamp(base * (1.45 - 0.9 * S.detail), 0.04, 0.95);
-    E = new Uint8Array(n);
+    const E = new Uint8Array(n);
     for (let i = 0; i < n; i++) if (v[i] > thr && (!region || region[i])) E[i] = 1;
     thin(E, w, h);
     removeStairs(E, w, h);
     pruneSpurs(E, w, h, Math.round(6 * scale));
+    layers.push([E, minLen]);
+  } else if (style === 'sketch') {
+    // 1. contours: borders between background, hair, face, skin and clothes
+    const L = SUB.parts || (region ? region.map((v) => (v ? PART.clothes : 0)) : new Uint8Array(n));
+    const faces = S.faceFeatures && AI.faceSets ? SUB.faces || [] : [];
+    const inFace = faces.length ? faceInterior(faces, w, h, 0.84) : null;
+    const B = new Uint8Array(n);
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+      const i = y * w + x, a = L[i];
+      if (x + 1 < w && L[i + 1] !== a) B[a ? i : i + 1] = 1;
+      if (y + 1 < h && L[i + w] !== a) B[a ? i : i + w] = 1;
+    }
+    if (S.outline) {
+      const Ec = B.slice();
+      if (inFace) for (let i = 0; i < n; i++) if (inFace[i]) Ec[i] = 0;
+      thin(Ec, w, h);
+      removeStairs(Ec, w, h);
+      layers.push([Ec, minLen]);
+    }
+    // 2. details: only strong, long edges inside clothes, hair and hands (never on the face)
+    if (S.details) {
+      const near = boxBlur(Float32Array.from(B), w, h, Math.max(2, Math.round(3 * scale)));
+      const inner = new Uint8Array(n);
+      for (let i = 0; i < n; i++) {
+        inner[i] = L[i] && near[i] === 0 && !(inFace && inFace[i]) && !(faces.length && L[i] === PART.face) ? 1 : 0;
+      }
+      const Ed = canny(R.gray, w, h, S.smooth * scale, S.detail * 0.55, inner);
+      thin(Ed, w, h);
+      removeStairs(Ed, w, h);
+      layers.push([Ed, minLen * 2.2]);
+      // hands and arms are small: look closer to their outline and keep weaker edges (fingers, knuckles)
+      const nearSkin = boxBlur(Float32Array.from(B), w, h, Math.max(1, Math.round(1.5 * scale)));
+      const skin = new Uint8Array(n);
+      let skinCount = 0;
+      for (let i = 0; i < n; i++) if (L[i] === PART.skin && nearSkin[i] === 0) { skin[i] = 1; skinCount++; }
+      if (skinCount > 50) {
+        const Es = canny(R.gray, w, h, Math.max(0.8, S.smooth * 0.8) * scale, Math.min(1, S.detail * 1.3 + 0.1), skin);
+        thin(Es, w, h);
+        removeStairs(Es, w, h);
+        layers.push([Es, minLen * 1.2]);
+      }
+    }
+    // 3. eyes, brows, irises, nose and lips as smooth curves through the landmarks
+    for (const lm of faces) vectors.push(...faceStrokes(lm));
   } else {
-    E = new Uint8Array(n);
+    const E = new Uint8Array(n);
     if (S.details) {
       const inner = region ? erode(region, w, h, Math.max(2, Math.round(3 * scale))) : null;
       const edges = canny(R.gray, w, h, S.smooth * scale, S.detail, inner);
@@ -1531,12 +1955,19 @@ function extractLines(style) {
     }
     thin(E, w, h);
     removeStairs(E, w, h);
+    layers.push([E, minLen]);
   }
-  const minLen = Math.max(2, S.minLen * scale);
-  const raw = traceStrokes(E, w, h);
-  const strokes = raw.filter((s) => s.xs.length >= minLen).map((s) => smoothStroke(smoothStroke(s, 3), 2));
+  let strokes = [], dropped = 0;
+  for (const [E, len] of layers) {
+    const raw = traceStrokes(E, w, h);
+    for (const s of raw) {
+      if (s.xs.length >= len) strokes.push(cleanStroke(s, scale));
+      else dropped++;
+    }
+  }
+  strokes = strokes.concat(vectors);
   const seq = orderStrokes(strokes);
-  return { strokes, seq, dropped: raw.length - strokes.length };
+  return { strokes, seq, dropped, faces: vectors.length ? (SUB.faces || []).length : 0 };
 }
 
 // =====================================================================
@@ -1747,15 +2178,23 @@ function setBusy(text) { $('busy').hidden = !text; if (text) $('busyText').textC
 
 function updateStatus() {
   if (!LN || !F) return;
-  const style = R.styleUsed === 'center' ? 'ink centerlines' : 'edges';
-  const note = (SUB.cropped ? ' Cropped to the subject.' : '') + (SUB.note ? ` ${escapeHtml(SUB.note)}` : '');
+  const style = { center: 'ink centerlines', sketch: 'portrait sketch', edges: 'edges' }[R.styleUsed];
+  const nf = LN.faces;
+  const faceNote = R.styleUsed !== 'sketch' ? '' : nf ? ` Eyes, nose and mouth drawn from ${nf === 1 ? 'face landmarks' : `landmarks of ${nf} faces`}.` : S.faceFeatures ? (SUB.faceError ? ' The face-landmark model could not load.' : ' No face close enough to place eyes and mouth.') : '';
+  const note = faceNote + (SUB.cropped ? ' Cropped to the subject.' : '') + (SUB.note ? ` ${escapeHtml(SUB.note)}` : '');
   setStatus(`<b>${escapeHtml(SUB.label)}</b>, ${style}. ${fmt(LN.strokes.length)} strokes joined into one path with ${fmt(F.jumps)} pen lifts, ${fmt(Math.round(F.inkLen))} px of line, sampled at M = ${fmt(F.M)}.${note}`);
   $('subjectHint').textContent = SUB.label;
 }
 
+const STYLE_HINTS = {
+  auto: 'Sketch for people, edges for other photos, centerline for drawings and handwriting.',
+  sketch: 'Draws like an artist: outlines between hair, face, skin and clothes, clean eyes, nose and lips from face landmarks, and only the strongest folds.',
+  edges: 'Every strong brightness edge inside the subject (Canny). Busier, more photographic.',
+  center: 'For ink drawings, logos and handwriting: follows the middle of each pen stroke.',
+};
 const SUBJECT_HINTS = {
   auto: 'Picks for you: AI person or object segmentation for photos, transparency for cut-out PNGs, whole image for line art.',
-  person: 'AI selfie segmentation. Keeps the person, including face, hair and hands; drops the background.',
+  person: 'AI body-part segmentation. Keeps the person (hair, face, skin, clothes) and drops the background.',
   object: 'AI DeepLab segmentation for 20 everyday classes (cat, dog, car, bird, horse…).',
   plain: 'Removes a flat, single-colour background sampled from the picture’s border. No AI needed.',
   whole: 'Uses every edge in the picture, background included.',
@@ -1981,7 +2420,8 @@ function wire() {
   document.querySelectorAll('input[name="subject"]').forEach((r) => r.addEventListener('change', () => {
     S.subject = r.value; $('subjectHint').textContent = SUBJECT_HINTS[S.subject]; rebuild('mask');
   }));
-  document.querySelectorAll('input[name="style"]').forEach((r) => r.addEventListener('change', () => { S.style = r.value; rebuild('mask'); }));
+  document.querySelectorAll('input[name="style"]').forEach((r) => r.addEventListener('change', () => { S.style = r.value; $('styleHint').textContent = STYLE_HINTS[S.style]; rebuild('mask'); }));
+  $('optFace').addEventListener('change', (e) => { S.faceFeatures = e.target.checked; rebuild('lines'); });
   $('optOutline').addEventListener('change', (e) => { S.outline = e.target.checked; rebuild('lines'); });
   $('optDetails').addEventListener('change', (e) => { S.details = e.target.checked; rebuild('lines'); });
   bindRange('detail', 'detailOut', (v) => `${v}%`, (v) => (S.detail = v / 100), 'lines');
@@ -2081,6 +2521,7 @@ function wire() {
 
 // ----- boot -----
 $('subjectHint').textContent = SUBJECT_HINTS.auto;
+$('styleHint').textContent = STYLE_HINTS.auto;
 resetTrail();
 readColors();
 wire();

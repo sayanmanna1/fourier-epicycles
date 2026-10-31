@@ -14,6 +14,9 @@ cp "$tmp/package/wasm/vision_wasm_internal.js" "$tmp/package/wasm/vision_wasm_in
 base=https://storage.googleapis.com/mediapipe-models/image_segmenter
 curl -fsSL -o vendor/models/selfie_segmenter.tflite "$base/selfie_segmenter/float16/latest/selfie_segmenter.tflite"
 curl -fsSL -o vendor/models/deeplab_v3.tflite      "$base/deeplab_v3/float32/1/deeplab_v3.tflite"
+curl -fsSL -o vendor/models/selfie_multiclass_256x256.tflite "$base/selfie_multiclass_256x256/float32/latest/selfie_multiclass_256x256.tflite"
+curl -fsSL -o vendor/models/face_landmarker.task \
+  https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task
 
 echo "vendor/ ready:"
 find vendor -type f -exec ls -lh {} \; | awk '{print "  " $5 "\t" $9}'
