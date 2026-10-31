@@ -57,7 +57,7 @@ If `vendor/` is missing, run `./fetch-vendor.sh` (needs `npm` and `curl`). Witho
 | Drop strokes shorter than | removes specks and texture noise |
 | Working resolution | size the subject is traced at. The app crops to the subject first, so small figures still get full detail |
 | Epicycles N | number of circles, from 1 to M−1 |
-| Path samples M | DFT size. Auto picks about one sample per 2 px of line |
+| Path samples M | DFT size. Auto picks about one sample per 1.5 px of path, from 1,024 to 8,192 |
 | Playback | speed, circles, arms, preview of the final N-term curve, dashed pen-lift lines, loop, follow-the-pen camera |
 
 Keyboard: `Space` play/pause, `↑`/`↓` change N by 25%, `R` restart, `F` follow pen. On the canvas: scroll to zoom, drag to pan, double-click to fit.
