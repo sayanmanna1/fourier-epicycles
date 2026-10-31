@@ -2,15 +2,18 @@
 
 Draw any picture with Fourier epicycles. Load a photo or drawing, and the app:
 
-1. **Isolates the subject.** For photos it uses on-device AI (MediaPipe): a body-part model that labels hair, face, skin and clothes, and DeepLab-v3 for 20 everyday object classes. It can also remove a plain background, use PNG transparency, or keep the whole image.
-2. **Extracts the lines.**
-   * *Sketch* (people, the default for photos of people) draws the way an artist does:
-     * Outlines are the borders between hair, face, neck and hands, and clothes, so you get the hairline, jaw, ears, collar and sleeves as clean curves.
-     * Eyes (with irises), eyebrows, nose and lips come from 478 face landmarks and are drawn as smooth curves. No edge noise ever lands on the face.
-     * The rest is only the strongest, longest edges: suit lapels, folds, and fingers (hands get a closer look).
-   * *Edges* (other photos): Canny edge detection inside the subject, plus the subject's outline.
-   * *Centerline* (drawings, logos, handwriting): thresholds the ink and skeletonizes it, so a pen stroke becomes one line instead of two edges.
-   * Every traced stroke is simplified and smoothed (Douglas–Peucker, then Chaikin corner-cutting) so it reads as a calm, hand-drawn curve rather than a pixel staircase.
+1. **Isolates the subject (optional).** To ignore a busy background, it can cut out the person or object with on-device AI (MediaPipe body-part segmentation, or DeepLab-v3 for 20 everyday object classes). It can also remove a plain background with classical colour keying, use PNG transparency, or keep the whole image (no AI at all). This step only decides *what* to draw. It never draws lines.
+2. **Draws the lines with computer vision.**
+   * *Artist lines* (default for photos) use **Coherent Line Drawing** (Kang, Lee & Chui, 2007), written from scratch:
+     1. A bilateral filter calms skin pores and fabric weave while keeping real edges.
+     2. An **edge tangent flow** field records, for every pixel, the direction an edge through it runs, smoothed so neighbouring directions agree.
+     3. A **flow-based difference of Gaussians** detects dark line structure across each edge, then averages it along the edge's own flow curve. Broken edge fragments join into long, continuous pen strokes, the way an artist draws them.
+     4. A second pass with the first lines burned in closes the remaining gaps. Specks are removed, and the silhouette comes from the cut-out so it stays continuous.
+
+     Every line (eyes, nose, smile lines, hair, folds, fingers) comes from the photo itself.
+   * *Centerline* (drawings, logos, handwriting) thresholds the ink and skeletonizes it, so a pen stroke becomes one line instead of two edges.
+   * *AI sketch* is a simplified style: outlines between hair, face, skin and clothes, plus template eyes, nose and lips placed by 478 face landmarks.
+   * Every traced stroke is thinned to a 1‑px centerline, then simplified and smoothed (Douglas–Peucker, then Chaikin corner-cutting) so it reads as a calm, hand-drawn curve.
 3. **Turns the lines into one closed path.** It traces the 1‑px skeleton into strokes, orders them with nearest-neighbour plus 2‑opt to keep pen lifts short, and joins them.
 4. **Takes the DFT.** The path is resampled to M evenly spaced complex points `z = x + iy` and run through an FFT: `c_k = (1/M) Σ z_n e^{-2πi kn/M}`.
 5. **Animates N epicycles.** The coefficients are sorted by radius `|c_k|`. The N largest are chained tip to tail, each turning `k` times per drawing, and the last tip traces `z(t) = Σ c_k e^{2πi k t}`.
@@ -50,10 +53,10 @@ If `vendor/` is missing, run `./fetch-vendor.sh` (needs `npm` and `curl`). Witho
 | Control | What it does |
 |---|---|
 | Subject | Auto, Person (AI), Object (AI), Plain bg, Whole image |
-| Line style | Auto, Sketch (people), Edges, Centerline (ink drawings) |
-| Outlines / Inner details / Face features | switch each layer of the sketch on or off |
-| Detail | how many folds and edges to keep (or the ink threshold in centerline mode) |
-| Smoothing | Gaussian blur σ before edge detection |
+| Line style | Auto, Artist lines (computer vision), AI sketch, Centerline (ink drawings) |
+| Outlines / Inner details / AI face features | switch each layer on or off |
+| Detail | how many lines to keep: the share of the strongest line responses (or the ink threshold in centerline mode) |
+| Smoothing | bilateral filter passes before drawing; more passes give calmer, fewer lines |
 | Drop strokes shorter than | removes specks and texture noise |
 | Working resolution | size the subject is traced at. The app crops to the subject first, so small figures still get full detail |
 | Epicycles N | number of circles, from 1 to M−1 |
@@ -64,7 +67,8 @@ Keyboard: `Space` play/pause, `↑`/`↓` change N by 25%, `R` restart, `F` foll
 
 ## Tips
 
-* **Portraits:** leave everything on Auto. Faces looking at the camera (or roughly toward it) get landmark eyes, nose and mouth. Faces in full profile only get their outline. If the clothes look busy, lower *Detail* or raise *Drop strokes shorter than*. If they look bare, raise *Detail*.
+* **Portraits:** leave everything on Auto. Keep the working resolution at 1024 px for half-body shots so the eyes resolve. If the drawing looks busy (patterned ties, textured fabric), lower *Detail* or raise *Smoothing*. If it looks bare, raise *Detail*.
+* **No AI at all:** set Subject to *Whole* (or *Plain bg* for studio shots). The lines are always pure computer vision.
 * **Crisper small features (eyes):** raise N. The error readout tells you how close the circles are to the sketch.
 * **Line drawings, signatures, logos:** Line style → Centerline gives single clean strokes.
 * **Busy photos without a person or known object:** try Plain bg, or Whole with low Detail.

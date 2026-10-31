@@ -406,22 +406,22 @@ kbd {
       <legend>Lines</legend>
       <div class="seg" role="radiogroup" aria-label="Line style">
         <label><input type="radio" name="style" id="styAuto" value="auto" checked><span>Auto</span></label>
-        <label><input type="radio" name="style" id="stySketch" value="sketch"><span>Sketch (people)</span></label>
-        <label><input type="radio" name="style" id="styEdges" value="edges"><span>Edges</span></label>
+        <label><input type="radio" name="style" id="styArtist" value="artist"><span>Artist lines</span></label>
+        <label><input type="radio" name="style" id="stySketch" value="sketch"><span>AI sketch</span></label>
         <label><input type="radio" name="style" id="styCenter" value="center"><span>Centerline (ink)</span></label>
       </div>
       <p class="hint" id="styleHint"></p>
       <div class="checks">
         <label class="check"><input type="checkbox" id="optOutline" checked> Outlines</label>
         <label class="check"><input type="checkbox" id="optDetails" checked> Inner details</label>
-        <label class="check"><input type="checkbox" id="optFace" checked> Face features</label>
+        <label class="check"><input type="checkbox" id="optFace" checked> AI face features (AI sketch)</label>
       </div>
       <div class="row">
         <div class="row-head"><label for="detail">Detail</label><output id="detailOut" for="detail"></output></div>
-        <input type="range" id="detail" min="0" max="100" value="45">
+        <input type="range" id="detail" min="0" max="100" value="60">
       </div>
       <div class="row">
-        <div class="row-head"><label for="smooth">Smoothing (blur before edges)</label><output id="smoothOut" for="smooth"></output></div>
+        <div class="row-head"><label for="smooth">Smoothing (calms texture)</label><output id="smoothOut" for="smooth"></output></div>
         <input type="range" id="smooth" min="0" max="40" value="10">
       </div>
       <div class="row">
@@ -433,9 +433,9 @@ kbd {
         <select id="res">
           <option value="256">256 px</option>
           <option value="384">384 px</option>
-          <option value="512" selected>512 px</option>
+          <option value="512">512 px</option>
           <option value="768">768 px</option>
-          <option value="1024">1024 px</option>
+          <option value="1024" selected>1024 px</option>
         </select>
       </div>
     </fieldset>
@@ -550,7 +550,7 @@ const S = {
   source: null, sourceName: '', demo: null,
   subject: 'auto', style: 'auto',
   outline: true, details: true, faceFeatures: true,
-  detail: 0.45, smooth: 1.4, minLen: 12, res: 512,
+  detail: 0.6, smooth: 1.4, minLen: 12, res: 1024,
   mSel: 'auto', N: 250, userN: false,
   playing: !reduceMotion, cycleSec: 24, t: 0, loop: true,
   showCircles: true, showArms: true, showGhost: true, showJumps: false,
@@ -1330,6 +1330,180 @@ function smoothStroke(s, r = 2) {
   return { xs, ys, closed: s.closed };
 }
 
+// =====================================================================
+//  Coherent Line Drawing (Kang, Lee & Chui 2007), pure computer vision:
+//  edge tangent flow (ETF) → flow-based difference of Gaussians (FDoG)
+// =====================================================================
+
+// edge-preserving smoothing: removes skin pores and fabric weave, keeps real edges
+function bilateral(src, w, h, r, sigmaS, sigmaR) {
+  const out = new Float32Array(w * h);
+  const ws = [];
+  for (let dy = -r; dy <= r; dy++) for (let dx = -r; dx <= r; dx++) ws.push([dx, dy, Math.exp(-(dx * dx + dy * dy) / (2 * sigmaS * sigmaS))]);
+  const LUT = new Float32Array(256);
+  for (let k = 0; k < 256; k++) { const d = k / 255; LUT[k] = Math.exp(-(d * d) / (2 * sigmaR * sigmaR)); }
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+    const i = y * w + x, c = src[i];
+    let acc = 0, wsum = 0;
+    for (const [dx, dy, wsp] of ws) {
+      const xx = clamp(x + dx, 0, w - 1), yy = clamp(y + dy, 0, h - 1);
+      const v = src[yy * w + xx];
+      const wt = wsp * LUT[Math.min(255, (Math.abs(v - c) * 255) | 0)];
+      acc += wt * v; wsum += wt;
+    }
+    out[i] = acc / wsum;
+  }
+  return out;
+}
+
+// edge tangent flow: for every pixel, the direction an edge through it would run,
+// smoothed so neighbouring tangents agree (separable version of Kang's filter)
+const TANH_W = Float32Array.from({ length: 257 }, (_, k) => 0.5 * (1 + Math.tanh(3 * ((k - 128) / 128))));
+function edgeTangentFlow(g, w, h, radius, iters) {
+  const n = w * h;
+  const tx = new Float32Array(n), ty = new Float32Array(n), mag = new Float32Array(n);
+  let maxM = 1e-9;
+  for (let y = 1; y < h - 1; y++) for (let x = 1; x < w - 1; x++) {
+    const i = y * w + x;
+    const gx = -g[i - w - 1] - 2 * g[i - 1] - g[i + w - 1] + g[i - w + 1] + 2 * g[i + 1] + g[i + w + 1];
+    const gy = -g[i - w - 1] - 2 * g[i - w] - g[i - w + 1] + g[i + w - 1] + 2 * g[i + w] + g[i + w + 1];
+    const m = Math.hypot(gx, gy);
+    mag[i] = m;
+    if (m > maxM) maxM = m;
+    if (m > 1e-6) { tx[i] = -gy / m; ty[i] = gx / m; }
+  }
+  for (let i = 0; i < n; i++) mag[i] /= maxM;
+  const nx = new Float32Array(n), ny = new Float32Array(n);
+  for (let it = 0; it < iters; it++) {
+    for (const horizontal of [true, false]) {
+      for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+        const i = y * w + x;
+        const cx = tx[i], cy = ty[i], cm = mag[i];
+        let sx = 0, sy = 0;
+        for (let k = -radius; k <= radius; k++) {
+          let j;
+          if (horizontal) { const xx = x + k; if (xx < 0 || xx >= w) continue; j = i + k; }
+          else { const yy = y + k; if (yy < 0 || yy >= h) continue; j = i + k * w; }
+          const ox = tx[j], oy = ty[j];
+          const dot = cx * ox + cy * oy;
+          const wm = TANH_W[((mag[j] - cm) * 128 + 128) | 0];        // stronger edges steer weaker ones
+          const wd = j === i ? 1 : Math.abs(dot);                        // similar directions agree more
+          const phi = dot < 0 ? -1 : 1;
+          sx += phi * wm * wd * ox; sy += phi * wm * wd * oy;
+        }
+        const len = Math.hypot(sx, sy);
+        if (len > 1e-9) { nx[i] = sx / len; ny[i] = sy / len; } else { nx[i] = cx; ny[i] = cy; }
+      }
+      tx.set(nx); ty.set(ny);
+    }
+  }
+  return { tx, ty, mag };
+}
+
+function sampleBilinear(img, w, h, x, y) {
+  if (x < 0) x = 0; else if (x > w - 1.001) x = w - 1.001;
+  if (y < 0) y = 0; else if (y > h - 1.001) y = h - 1.001;
+  const x0 = x | 0, y0 = y | 0, fx = x - x0, fy = y - y0, i = y0 * w + x0;
+  return (img[i] * (1 - fx) + img[i + 1] * fx) * (1 - fy) + (img[i + w] * (1 - fx) + img[i + w + 1] * fx) * fy;
+}
+
+// flow-based difference of Gaussians: a DoG across each edge, then a Gaussian average
+// along the edge's own flow curve, which joins broken bits into long coherent strokes
+function fdog(g, w, h, tx, ty, sigmaC, sigmaM, rho) {
+  const n = w * h;
+  const sigmaS = 1.6 * sigmaC;
+  const T = Math.ceil(3 * sigmaS);
+  const f = [];
+  let fsum = 0;
+  const gauss = (s, sg) => Math.exp(-(s * s) / (2 * sg * sg)) / (Math.sqrt(2 * Math.PI) * sg);
+  for (let s = -T; s <= T; s++) f.push(gauss(s, sigmaC) - rho * gauss(s, sigmaS));
+  // 1) across the flow (along the gradient)
+  const Hg = new Float32Array(n);
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+    const i = y * w + x;
+    const gx = ty[i], gy = -tx[i]; // gradient direction = tangent rotated 90°
+    let acc = 0;
+    for (let s = -T; s <= T; s++) acc += f[s + T] * sampleBilinear(g, w, h, x + s * gx, y + s * gy);
+    Hg[i] = acc;
+  }
+  // 2) along the flow curve
+  const S = Math.ceil(3 * sigmaM);
+  const gm = [];
+  for (let s = 0; s <= S; s++) gm.push(Math.exp(-(s * s) / (2 * sigmaM * sigmaM)));
+  const He = new Float32Array(n);
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+    const i = y * w + x;
+    let acc = gm[0] * Hg[i], wsum = gm[0];
+    for (const dir of [1, -1]) {
+      let px = x, py = y, vx = tx[i] * dir, vy = ty[i] * dir;
+      for (let s = 1; s <= S; s++) {
+        px += vx; py += vy;
+        if (px < 0 || py < 0 || px > w - 1 || py > h - 1) break;
+        acc += gm[s] * sampleBilinear(Hg, w, h, px, py);
+        wsum += gm[s];
+        const j = (py + 0.5 | 0) * w + (px + 0.5 | 0);
+        let ux = tx[j], uy = ty[j];
+        if (ux * vx + uy * vy < 0) { ux = -ux; uy = -uy; }
+        if (ux === 0 && uy === 0) break;
+        vx = ux; vy = uy;
+      }
+    }
+    He[i] = acc / wsum;
+  }
+  return He;
+}
+
+// grey image prepared for line drawing: background turned to paper, contrast stretched, texture calmed
+function lineDrawingInput(region) {
+  const { w, h, n } = R;
+  const g = Float32Array.from(R.gray);
+  const inside = region ? boxBlur(Float32Array.from(region), w, h, 1) : null;
+  const vals = [];
+  for (let i = 0; i < n; i += region ? 1 : 3) if (!inside || inside[i] > 0.5) vals.push(g[i]);
+  const sorted = Float32Array.from(vals).sort();
+  const lo = sorted[(sorted.length * 0.01) | 0] ?? 0, hi = sorted[(sorted.length * 0.99) | 0] ?? 1;
+  const span = Math.max(0.05, hi - lo);
+  for (let i = 0; i < n; i++) g[i] = clamp((g[i] - lo) / span, 0, 1);
+  if (inside) for (let i = 0; i < n; i++) g[i] = g[i] * inside[i] + (1 - inside[i]); // paper outside the subject
+  let s = g;
+  const passes = Math.round(S.smooth); // smoothing slider: more passes = calmer, fewer lines
+  for (let k = 0; k < passes; k++) s = bilateral(s, w, h, 2, 1.5, 0.1);
+  return s;
+}
+
+// lines a careful artist would draw: coherent flow lines, thresholded, with specks removed
+function artistLines(region) {
+  const { w, h, n } = R;
+  const scale = Math.max(w, h) / 512;
+  const g = lineDrawingInput(region);
+  const { tx, ty } = edgeTangentFlow(g, w, h, 5, 3);
+  const sigmaC = 0.85;
+  let He = fdog(g, w, h, tx, ty, sigmaC, 3.0 * scale, 0.99);
+  // adaptive threshold: keep the strongest dark responses; Detail decides how many
+  const neg = [];
+  for (let i = 0; i < n; i++) if (He[i] < 0) neg.push(-He[i]);
+  const sorted = Float32Array.from(neg).sort();
+  const q = 0.80 - 0.55 * S.detail; // detail 0 → strongest 20 % of dark responses, detail 1 → strongest 75 %
+  const thr = sorted.length ? sorted[Math.min(sorted.length - 1, (sorted.length * q) | 0)] : 1;
+  const L = new Uint8Array(n);
+  for (let i = 0; i < n; i++) L[i] = He[i] < -thr ? 1 : 0;
+  // second FDoG pass with the first lines burned in: joins gaps along strokes
+  const g2 = Float32Array.from(g);
+  for (let i = 0; i < n; i++) if (L[i]) g2[i] = 0;
+  He = fdog(g2, w, h, tx, ty, sigmaC, 3.0 * scale, 0.99);
+  for (let i = 0; i < n; i++) L[i] = He[i] < -thr ? 1 : 0;
+  // only inside (or right on the edge of) the subject
+  if (region) {
+    const near = boxBlur(Float32Array.from(region), w, h, Math.max(2, Math.round(3 * scale)));
+    for (let i = 0; i < n; i++) if (near[i] === 0) L[i] = 0;
+  }
+  // drop specks (pores, texture dots)
+  const cc = components(L, w, h, 1);
+  const minArea = Math.max(6, Math.round(14 * scale * scale));
+  for (let i = 0; i < n; i++) if (L[i] && cc.areas[cc.lab[i]] < minArea) L[i] = 0;
+  return L;
+}
+
 // ---------- turning jagged pixel chains into calm, hand-drawn curves ----------
 function rdpKeep(xs, ys, eps) {
   const m = xs.length, keep = new Uint8Array(m);
@@ -1815,12 +1989,12 @@ async function rebuild(from) {
       }
       SUB.base = base;
       SUB.faces = [];
-      if (SUB.kind === 'person' && base !== 'center' && base !== 'edges') {
+      if (SUB.kind === 'person' && base === 'sketch') {
         try { SUB.faces = await detectFaces(SUB.parts); } catch (e) { SUB.faceError = true; }
         if (stale()) return;
       }
     }
-    const style = base === 'photo' ? (SUB.kind === 'person' ? 'sketch' : 'edges') : base === 'sketch' && SUB.kind !== 'person' ? 'edges' : base;
+    const style = base === 'photo' ? 'artist' : base === 'sketch' && SUB.kind !== 'person' ? 'artist' : base;
     R.styleUsed = style;
 
     if (lv <= 2 || !LN) {
@@ -1899,6 +2073,23 @@ function extractLines(style) {
     removeStairs(E, w, h);
     pruneSpurs(E, w, h, Math.round(6 * scale));
     layers.push([E, minLen]);
+  } else if (style === 'artist') {
+    const E = artistLines(region);
+    const artistMin = Math.max(2, S.minLen * Math.sqrt(scale));
+    // the silhouette comes from the cut-out (continuous even where subject and background
+    // have similar brightness); drawn lines hugging it would only double it
+    if (S.outline && region) {
+      const o = outlineOf(region, w, h);
+      const nearO = boxBlur(Float32Array.from(o), w, h, Math.max(2, Math.round(3 * scale)));
+      for (let i = 0; i < n; i++) {
+        if (o[i]) E[i] = 1;
+        else if (nearO[i] > 0) E[i] = 0;
+      }
+    }
+    thin(E, w, h);
+    removeStairs(E, w, h);
+    pruneSpurs(E, w, h, Math.round(4 * Math.sqrt(scale)));
+    layers.push([E, artistMin]);
   } else if (style === 'sketch') {
     // 1. contours: borders between background, hair, face, skin and clothes
     const L = SUB.parts || (region ? region.map((v) => (v ? PART.clothes : 0)) : new Uint8Array(n));
@@ -2178,7 +2369,7 @@ function setBusy(text) { $('busy').hidden = !text; if (text) $('busyText').textC
 
 function updateStatus() {
   if (!LN || !F) return;
-  const style = { center: 'ink centerlines', sketch: 'portrait sketch', edges: 'edges' }[R.styleUsed];
+  const style = { center: 'ink centerlines', sketch: 'AI sketch', edges: 'edges', artist: 'artist lines (computer vision)' }[R.styleUsed];
   const nf = LN.faces;
   const faceNote = R.styleUsed !== 'sketch' ? '' : nf ? ` Eyes, nose and mouth drawn from ${nf === 1 ? 'face landmarks' : `landmarks of ${nf} faces`}.` : S.faceFeatures ? (SUB.faceError ? ' The face-landmark model could not load.' : ' No face close enough to place eyes and mouth.') : '';
   const note = faceNote + (SUB.cropped ? ' Cropped to the subject.' : '') + (SUB.note ? ` ${escapeHtml(SUB.note)}` : '');
@@ -2187,17 +2378,18 @@ function updateStatus() {
 }
 
 const STYLE_HINTS = {
-  auto: 'Sketch for people, edges for other photos, centerline for drawings and handwriting.',
-  sketch: 'Draws like an artist: outlines between hair, face, skin and clothes, clean eyes, nose and lips from face landmarks, and only the strongest folds.',
+  auto: 'Artist lines for photos, centerline for drawings and handwriting.',
+  artist: 'Pure computer vision (Coherent Line Drawing): follows the flow of every edge and draws long, continuous ink lines taken straight from the photo.',
+  sketch: 'Simplified: outlines between hair, face, skin and clothes, with template eyes, nose and lips placed by face landmarks (AI).',
   edges: 'Every strong brightness edge inside the subject (Canny). Busier, more photographic.',
   center: 'For ink drawings, logos and handwriting: follows the middle of each pen stroke.',
 };
 const SUBJECT_HINTS = {
-  auto: 'Picks for you: AI person or object segmentation for photos, transparency for cut-out PNGs, whole image for line art.',
+  auto: 'Only decides what to keep: AI cut-out of the person or object for photos, transparency for PNGs, whole image for line art. The lines themselves are always computer vision.',
   person: 'AI body-part segmentation. Keeps the person (hair, face, skin, clothes) and drops the background.',
   object: 'AI DeepLab segmentation for 20 everyday classes (cat, dog, car, bird, horse…).',
   plain: 'Removes a flat, single-colour background sampled from the picture’s border. No AI needed.',
-  whole: 'Uses every edge in the picture, background included.',
+  whole: 'No cut-out and no AI at all: draws the whole picture, background included.',
 };
 
 function nToSlider(N) {
@@ -2529,7 +2721,7 @@ resize();
 setPlaying(S.playing);
 requestAnimationFrame(tick);
 loadDemo('cat');
-window.__epicycles = { S, get F() { return F; }, get LN() { return LN; }, get SUB() { return SUB; }, get R() { return R; }, setN, loadFile };
+window.__epicycles = { S, get F() { return F; }, get LN() { return LN; }, get SUB() { return SUB; }, get R() { return R; }, setN, loadFile, rebuild };
 </script>
 </body>
 </html>
