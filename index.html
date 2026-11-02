@@ -302,6 +302,79 @@ kbd {
   text-wrap: balance;
 }
 .tip-hint { margin: 0; font-size: 12px; color: var(--muted); }
+.about-btn {
+  pointer-events: auto;
+  border: 1px solid var(--line);
+  background: color-mix(in srgb, var(--raise) 90%, transparent);
+  border-radius: 999px;
+  padding: 4px 12px;
+  font-size: 12.5px;
+  font-weight: 500;
+  cursor: pointer;
+}
+.about-btn:hover { border-color: var(--accent); color: var(--accent); }
+
+.about {
+  width: min(600px, calc(100% - 32px));
+  max-height: min(86vh, 860px);
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--raise);
+  color: var(--fg);
+  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.35);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+.about::backdrop { background: rgba(6, 9, 18, 0.55); }
+.about[open] { display: grid; gap: 14px; padding: 22px 24px 20px; }
+.about-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+.about h2 { margin: 0; font: 400 30px/1.1 var(--display); text-wrap: balance; }
+.about-close {
+  flex: none;
+  width: 32px; height: 32px;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+  background: transparent;
+  font-size: 20px; line-height: 1;
+  cursor: pointer;
+}
+.about-close:hover { border-color: var(--accent); }
+.about-lede { margin: 0; color: var(--muted); max-width: 60ch; }
+.about-steps { margin: 0; padding: 0; list-style: none; counter-reset: step; display: grid; gap: 14px; }
+.about-steps li { counter-increment: step; display: grid; grid-template-columns: 28px minmax(0, 1fr); column-gap: 10px; }
+.about-steps li::before {
+  content: counter(step);
+  grid-row: 1 / span 9;
+  width: 24px; height: 24px;
+  border-radius: 50%;
+  display: grid; place-items: center;
+  font: 500 12px var(--mono);
+  color: var(--accent-ink);
+  background: var(--accent);
+  margin-top: 1px;
+}
+.about-steps h3 { margin: 0 0 4px; font-size: 15px; font-weight: 600; }
+.about-steps p { margin: 0 0 6px; max-width: 62ch; }
+.about-steps p i { font-family: "Cambria Math", "STIX Two Math", "Times New Roman", Georgia, serif; font-size: 1.08em; padding-right: 0.06em; }
+.formula {
+  margin: 4px 0 8px;
+  padding: 10px 14px;
+  border-radius: 8px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  font: 400 18px/1.6 "Cambria Math", "STIX Two Math", "Times New Roman", Georgia, serif;
+  overflow-x: auto;
+  white-space: nowrap;
+}
+.formula sub, .formula sup { font-size: 0.68em; }
+.formula .big { font-size: 1.35em; vertical-align: -0.08em; }
+.frac { display: inline-grid; vertical-align: middle; text-align: center; font-size: 0.8em; line-height: 1.1; margin: 0 2px; }
+.frac > span:first-child { border-bottom: 1px solid currentColor; padding: 0 3px; }
+.root { font-size: 1.15em; }
+.under { border-top: 1px solid currentColor; padding: 0 3px; }
+.about-foot { margin: 4px 0 0; padding-top: 12px; border-top: 1px solid var(--line); font-size: 12.5px; color: var(--muted); }
+.about-foot a { color: var(--accent); }
 .busy {
   position: absolute;
   left: 50%;
@@ -388,6 +461,9 @@ kbd {
   .tip-hint { display: none; }
   .corner { top: 14px; }
   .credit { font-size: 12.5px; max-width: 11em; }
+  .about-btn { font-size: 12px; padding: 3px 10px; }
+  .about[open] { padding: 18px 16px 16px; }
+  .about h2 { font-size: 26px; }
   #hudLine2 { display: none; }
   #fit { display: none; }
   .transport { gap: 4px; padding: 6px; }
@@ -570,6 +646,7 @@ kbd {
     </div>
     <div class="corner">
       <p class="credit">Created by Sayan, hope you like it :)</p>
+      <button class="about-btn" id="aboutBtn" type="button" aria-haspopup="dialog">About this project</button>
       <p class="tip-hint">Scroll to zoom · drag to pan · double-click to fit</p>
     </div>
     <div class="busy" id="busy" hidden><span id="busyText">Working…</span></div>
@@ -590,6 +667,45 @@ kbd {
   </main>
 </div>
 <div class="dropveil" id="dropveil" hidden>Drop the image to trace it</div>
+
+<dialog class="about" id="about" aria-labelledby="aboutTitle">
+  <div class="about-head">
+    <h2 id="aboutTitle">How this works</h2>
+    <button class="about-close" id="aboutClose" type="button" aria-label="Close">×</button>
+  </div>
+  <p class="about-lede">Every drawing here is made by one pen tip at the end of a chain of spinning circles. The circles come straight from the Fourier transform of the drawing itself.</p>
+  <ol class="about-steps">
+    <li>
+      <h3>One continuous line</h3>
+      <p>The picture first becomes a line drawing. Photos use Coherent Line Drawing, a computer-vision method that follows the flow of edges. Typed text is traced along the middle of each letter. All the strokes are then joined into a single closed path; the jumps between strokes are where the pen lifts.</p>
+    </li>
+    <li>
+      <h3>The line as complex numbers</h3>
+      <p>The path is sampled at <i>M</i> evenly spaced points, and each point (<i>x</i>, <i>y</i>) becomes one complex number:</p>
+      <div class="formula"><i>z</i><sub><i>n</i></sub> = <i>x</i><sub><i>n</i></sub> + <i>i</i>·<i>y</i><sub><i>n</i></sub>,&ensp; <i>n</i> = 0 … <i>M</i>−1</div>
+      <p>Going once around the path is now a repeating list of <i>M</i> numbers, which is exactly what a Fourier series describes.</p>
+    </li>
+    <li>
+      <h3>The discrete Fourier transform</h3>
+      <p>The DFT rewrites that list as a sum of rotations:</p>
+      <div class="formula"><i>c</i><sub><i>k</i></sub> = <span class="frac"><span>1</span><span><i>M</i></span></span> <span class="big">Σ</span><sub><i>n</i>=0</sub><sup><i>M</i>−1</sup> <i>z</i><sub><i>n</i></sub> · <i>e</i><sup>−2π<i>i</i>·<i>kn</i>/<i>M</i></sup></div>
+      <p>Each coefficient <i>c</i><sub><i>k</i></sub> is one circle. Its radius is |<i>c</i><sub><i>k</i></sub>|, its starting angle is arg <i>c</i><sub><i>k</i></sub>, and it turns <i>k</i> times per drawing (negative <i>k</i> turns the other way). <i>c</i><sub>0</sub> is the average point, the fixed centre the chain hangs from. All <i>M</i> coefficients are computed at once with the fast Fourier transform, in <i>M</i> log <i>M</i> steps instead of <i>M</i>².</p>
+    </li>
+    <li>
+      <h3>Drawing with N circles</h3>
+      <p>Adding the rotations back together gives the path at any moment <i>t</i> from 0 to 1:</p>
+      <div class="formula"><i>z</i>(<i>t</i>) = <span class="big">Σ</span><sub><i>k</i></sub> <i>c</i><sub><i>k</i></sub> · <i>e</i><sup>2π<i>i</i>·<i>k t</i></sup></div>
+      <p>Placing the circles tip to tail, largest first, gives the epicycles you see. The N slider keeps only the N largest circles: a handful draw a rough blob, a few hundred draw the whole picture.</p>
+    </li>
+    <li>
+      <h3>How close it gets</h3>
+      <p>By Parseval’s theorem, the average distance between the drawing and the traced line is set by the circles left out:</p>
+      <div class="formula">error = <span class="root">√</span><span class="under"><span class="big">Σ</span><sub>dropped</sub> |<i>c</i><sub><i>k</i></sub>|²</span></div>
+      <p>That is the “avg error” readout. The spectrum chart shows which frequencies are in use.</p>
+    </li>
+  </ol>
+  <p class="about-foot">Created by Sayan. Everything runs in your browser; nothing is uploaded. <a href="https://github.com/sayanmanna1/fourier-epicycles" target="_blank" rel="noopener">Source code on GitHub</a></p>
+</dialog>
 
 <script type="module">
 // =====================================================================
@@ -2878,7 +2994,16 @@ function wire() {
     if (item) loadFile(item.getAsFile());
   });
 
+  // about panel
+  const about = $('about');
+  $('aboutBtn').addEventListener('click', () => {
+    if (typeof about.showModal === 'function') about.showModal(); else about.setAttribute('open', '');
+  });
+  $('aboutClose').addEventListener('click', () => (about.close ? about.close() : about.removeAttribute('open')));
+  about.addEventListener('click', (e) => { if (e.target === about) about.close(); }); // click on the backdrop
+
   window.addEventListener('keydown', (e) => {
+    if (about.open) return;
     if (e.target.closest('input, select, textarea') && e.target.type !== 'range' && e.target.type !== 'checkbox' && e.target.type !== 'radio') return;
     if (e.key === ' ' && !e.target.closest('button')) { e.preventDefault(); setPlaying(!S.playing); }
     else if (e.key === 'ArrowUp' && !e.target.closest('input')) { e.preventDefault(); setN(Math.max(S.N + 1, S.N * 1.25)); }

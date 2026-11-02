@@ -57,6 +57,7 @@ If `vendor/` is missing, run `./fetch-vendor.sh` (needs `npm` and `curl`). Witho
 | Control | What it does |
 |---|---|
 | Write text | text box (Enter draws, Shift+Enter adds a line) and handwriting style |
+| About this project (top right) | a short explainer of how the line becomes complex numbers, how the DFT turns it into circles, and what N and the error readout mean |
 | Subject | Auto, Person (AI), Object (AI), Plain bg, Whole image |
 | Line style | Auto, Artist lines (computer vision), AI sketch, Centerline (ink drawings) |
 | Outlines / Inner details / AI face features | switch each layer on or off |
